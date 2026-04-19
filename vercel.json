@@ -1,7 +1,1 @@
-{
-  "comment": "Cron is run by Supabase pg_cron (see supabase/cron.sql) to stay on the free tier. If you upgrade to Vercel Pro, you can use Vercel Cron instead by uncommenting the crons block below.",
-  "crons_disabled": [
-    { "path": "/api/tick", "schedule": "* * * * *" },
-    { "path": "/api/check-replies", "schedule": "*/5 * * * *" }
-  ]
-}
+{}

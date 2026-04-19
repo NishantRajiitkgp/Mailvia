@@ -129,38 +129,16 @@ export async function GET(req: NextRequest) {
   }
 
   if (!recipient) {
-    // Per-domain throttling: don't hit the same company MX twice within 10 min.
-    const tenMinAgo = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
-    const { data: recentLog } = await db
-      .from("send_log")
-      .select("recipients!inner(domain)")
-      .gt("sent_at", tenMinAgo);
-    const hotDomains = new Set(
-      (recentLog ?? [])
-        .map((r: { recipients: { domain: string | null } | { domain: string | null }[] }) => {
-          const rec = Array.isArray(r.recipients) ? r.recipients[0] : r.recipients;
-          return rec?.domain;
-        })
-        .filter((d): d is string => Boolean(d))
-    );
-
-    const { data: candidates } = await db
+    const { data: fresh } = await db
       .from("recipients")
       .select("*")
       .eq("campaign_id", campaign.id)
       .eq("status", "pending")
       .eq("retry_count", 0)
       .order("row_index", { ascending: true })
-      .limit(20);
-
-    const fresh = (candidates ?? []).find((c) => !c.domain || !hotDomains.has(c.domain)) ?? null;
+      .limit(1)
+      .maybeSingle();
     if (fresh) { recipient = fresh; kind = "initial"; }
-    else if ((candidates ?? []).length > 0) {
-      return NextResponse.json({
-        status: "domain_cooldown",
-        blocked_domains: Array.from(hotDomains),
-      });
-    }
   }
 
   if (!recipient) {

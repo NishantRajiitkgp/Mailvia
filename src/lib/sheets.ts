@@ -40,7 +40,7 @@ export async function listSheets(url: string): Promise<{ fileId: string; sheets:
 export async function parseSheet(
   url: string,
   sheetName: string
-): Promise<{ rows: ParsedRow[]; errors: string[] }> {
+): Promise<{ rows: ParsedRow[]; errors: string[]; columns: string[] }> {
   const fileId = extractFileId(url);
   if (!fileId) throw new Error("Couldn't find a spreadsheet ID in that URL.");
   const buf = await fetchSpreadsheetBuffer(fileId);

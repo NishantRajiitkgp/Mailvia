@@ -20,27 +20,85 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   const now = new Date();
 
-  const { data: campaign } = await db
+  // Multi-campaign scheduler: rotate fairly across all running campaigns
+  // so one long-running campaign doesn't starve the others. Pick the
+  // campaign whose most recent send is the oldest (NULL = never sent = top).
+  const { data: running } = await db
     .from("campaigns")
     .select("*")
     .eq("status", "running")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: true });
 
-  if (!campaign) return NextResponse.json({ status: "no_running_campaign" });
+  if (!running || running.length === 0) {
+    return NextResponse.json({ status: "no_running_campaign" });
+  }
+
+  // Fetch last send per running campaign in one query, then bucket client-side
+  const campaignIds = running.map((c) => c.id);
+  const { data: recentLogs } = await db
+    .from("send_log")
+    .select("campaign_id, sent_at")
+    .in("campaign_id", campaignIds)
+    .order("sent_at", { ascending: false });
+  const lastSendMs = new Map<string, number>();
+  for (const row of recentLogs ?? []) {
+    if (!lastSendMs.has(row.campaign_id)) {
+      lastSendMs.set(row.campaign_id, new Date(row.sent_at).getTime());
+    }
+  }
+
+  // Sort: never-sent first (0), then oldest-last-send first.
+  running.sort((a, b) => (lastSendMs.get(a.id) ?? 0) - (lastSendMs.get(b.id) ?? 0));
+
+  // Walk the sorted list — first campaign that passes ALL gates (window,
+  // start_at, gap, daily cap) wins the tick. The rest wait for next tick.
+  let campaign: typeof running[0] | null = null;
+  let todayCount = 0;
+  const skipped: Array<{ id: string; name: string; reason: string }> = [];
+
+  for (const c of running) {
+    const tz = c.timezone || "Asia/Kolkata";
+
+    if (!inWindow(now, tz, c.schedule, c.window_start_hour, c.window_end_hour)) {
+      skipped.push({ id: c.id, name: c.name, reason: "outside_window" });
+      continue;
+    }
+    if (c.start_at && new Date(c.start_at) > now) {
+      skipped.push({ id: c.id, name: c.name, reason: "not_yet_started" });
+      continue;
+    }
+    const lastTs = lastSendMs.get(c.id);
+    if (lastTs) {
+      const gapMs = (c.gap_seconds ?? 120) * 1000;
+      if (now.getTime() - lastTs < gapMs) {
+        skipped.push({ id: c.id, name: c.name, reason: "gap_not_elapsed" });
+        continue;
+      }
+    }
+    const today = dayKey(now, tz);
+    const { count } = await db
+      .from("send_log")
+      .select("*", { count: "exact", head: true })
+      .eq("campaign_id", c.id)
+      .eq("day", today);
+    if ((count ?? 0) >= c.daily_cap) {
+      skipped.push({ id: c.id, name: c.name, reason: "daily_cap_reached" });
+      continue;
+    }
+
+    campaign = c;
+    todayCount = count ?? 0;
+    break;
+  }
+
+  if (!campaign) {
+    return NextResponse.json({ status: "all_throttled", skipped });
+  }
 
   const tz = campaign.timezone || "Asia/Kolkata";
-  if (!inWindow(now, tz, campaign.schedule, campaign.window_start_hour, campaign.window_end_hour)) {
-    return NextResponse.json({ status: "outside_window", tz });
-  }
+  const today = dayKey(now, tz);
 
-  // honor scheduled start
-  if (campaign.start_at && new Date(campaign.start_at) > now) {
-    return NextResponse.json({ status: "not_yet_started", start_at: campaign.start_at });
-  }
-
-  // resolve sender creds
+  // resolve sender creds for the winning campaign
   let sender: { email: string; appPassword: string; fromName?: string | null } | null = null;
   if (campaign.sender_id) {
     const { data: s } = await db
@@ -49,32 +107,6 @@ export async function GET(req: NextRequest) {
       .eq("id", campaign.sender_id)
       .maybeSingle();
     if (s) sender = { email: s.email, appPassword: decryptSecret(s.app_password), fromName: s.from_name };
-  }
-
-  // per-campaign gap check
-  const { data: last } = await db
-    .from("send_log")
-    .select("sent_at")
-    .eq("campaign_id", campaign.id)
-    .order("sent_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (last?.sent_at) {
-    const gapSeconds = campaign.gap_seconds ?? 120;
-    const gapMs = gapSeconds * 1000;
-    if (now.getTime() - new Date(last.sent_at).getTime() < gapMs) {
-      return NextResponse.json({ status: "gap_not_elapsed" });
-    }
-  }
-
-  const today = dayKey(now, tz);
-  const { count: todayCount } = await db
-    .from("send_log")
-    .select("*", { count: "exact", head: true })
-    .eq("campaign_id", campaign.id)
-    .eq("day", today);
-  if ((todayCount ?? 0) >= campaign.daily_cap) {
-    return NextResponse.json({ status: "daily_cap_reached", sent_today: todayCount });
   }
 
   // ----- pick next thing to send: follow-up > retry > fresh -----

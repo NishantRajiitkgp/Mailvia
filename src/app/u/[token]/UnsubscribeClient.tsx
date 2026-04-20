@@ -17,22 +17,23 @@ export default function UnsubscribeClient({ token, email }: { token: string; ema
 
   if (state === "done") {
     return (
-      <div className="mt-8 pt-6 rule">
-        <div className="kicker">Unsubscribed</div>
-        <p className="mt-2">You won't receive any more emails from this sender. Sorry for the noise.</p>
+      <div className="rounded-md border border-ink-200 bg-surface p-4 text-[14px]">
+        You won't receive any more emails from this sender. Sorry for the noise.
       </div>
     );
   }
 
   return (
-    <div className="mt-10 flex flex-col sm:flex-row gap-3">
-      <button onClick={confirm} disabled={state === "loading"} className="btn-accent">
-        {state === "loading" ? "Unsubscribing…" : `Unsubscribe ${email}`}
-      </button>
-      <a href="/" className="btn-quiet">Keep me subscribed</a>
+    <>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <button onClick={confirm} disabled={state === "loading"} className="btn-primary flex-1">
+          {state === "loading" ? "Unsubscribing…" : `Unsubscribe ${email}`}
+        </button>
+        <a href="/" className="btn-ghost flex-1 text-center justify-center">Keep me subscribed</a>
+      </div>
       {state === "error" && (
-        <p className="text-sm text-red-700 mt-2">Something went wrong. Try again.</p>
+        <p className="text-[13px] text-red-600 mt-3">Something went wrong. Try again.</p>
       )}
-    </div>
+    </>
   );
 }

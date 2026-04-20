@@ -10,7 +10,9 @@ export function render(tpl: string, vars: Record<string, string>) {
   return tpl.replace(TAG, (_m, key) => {
     const k = String(key).trim();
     const v = resolved[k];
-    return v !== undefined && v !== "" ? v : `{{${k}}}`;
+    // Known keys — use value (empty allowed). Unknown keys — leave literal for visibility.
+    if (Object.prototype.hasOwnProperty.call(resolved, k)) return v ?? "";
+    return `{{${k}}}`;
   });
 }
 

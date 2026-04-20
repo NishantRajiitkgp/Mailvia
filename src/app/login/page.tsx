@@ -39,10 +39,12 @@ export default function LoginPage() {
 
         <div className="space-y-5">
           <div>
-            <label className="label-cap">Password</label>
+            <label htmlFor="login-password" className="label-cap">Password</label>
             <input
+              id="login-password"
               className="field-boxed"
               type="password"
+              autoComplete="current-password"
               autoFocus
               value={password}
               onChange={(e) => setPassword(e.target.value)}

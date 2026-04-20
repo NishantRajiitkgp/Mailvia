@@ -2,16 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { fetchIncomingMessages } from "@/lib/replies";
 import { decryptSecret } from "@/lib/crypto";
+import { cronBearerOk } from "@/lib/tokens";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return NextResponse.json({ error: "CRON_SECRET not set" }, { status: 500 });
-  const header = req.headers.get("authorization") ?? "";
-  if (header !== `Bearer ${secret}`) {
+  if (!cronBearerOk(req.headers.get("authorization"))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

@@ -65,14 +65,15 @@ export default function ScheduleEditor({
 
   function formatEta(N: number): string {
     if (sendsPerActiveDay === 0) return "never — add an active day or lower the gap";
-    if (daysNeeded <= 1) {
+    const days = Math.ceil(N / sendsPerActiveDay);
+    if (days <= 1) {
       const totalMin = N * perGapMin;
       if (totalMin < 60) return `≈ ${Math.ceil(totalMin)} min to send all`;
       const h = Math.floor(totalMin / 60);
       const m = Math.round(totalMin - h * 60);
       return m > 0 ? `≈ ${h} hr ${m} min to send all` : `≈ ${h} hr to send all`;
     }
-    return `≈ ${daysNeeded} active ${daysNeeded === 1 ? "day" : "days"} to send all`;
+    return `≈ ${days} active ${days === 1 ? "day" : "days"} to send all`;
   }
 
   // local text state so users can freely type / clear the number inputs

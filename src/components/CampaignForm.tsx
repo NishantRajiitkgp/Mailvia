@@ -80,9 +80,13 @@ export default function CampaignForm({
   const [maxRetries, setMaxRetries] = useState(initial?.max_retries ?? 2);
   const [trackingEnabled, setTrackingEnabled] = useState(initial?.tracking_enabled ?? true);
   const [unsubEnabled, setUnsubEnabled] = useState(initial?.unsubscribe_enabled ?? false);
-  const [startAt, setStartAt] = useState<string>(
-    initial?.start_at ? new Date(initial.start_at).toISOString().slice(0, 16) : ""
-  );
+  const [startAt, setStartAt] = useState<string>(() => {
+    if (!initial?.start_at) return "";
+    const d = new Date(initial.start_at);
+    if (isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
 
   // ---------- test send ----------
   const [testEmail, setTestEmail] = useState("");

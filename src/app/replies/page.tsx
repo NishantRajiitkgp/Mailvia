@@ -27,9 +27,10 @@ export default function RepliesPage() {
 
   useEffect(() => { load(); }, []);
 
-  async function runNow() {
+  async function reload() {
     setRunning(true);
-    setTimeout(() => { load(); setRunning(false); }, 1000);
+    await load();
+    setRunning(false);
   }
 
   return (
@@ -42,8 +43,8 @@ export default function RepliesPage() {
               {replies === null ? "Loading…" : `${replies.length} inbound messages from recipients`}
             </p>
           </div>
-          <button type="button" onClick={runNow} disabled={running} className="btn-ghost text-[13px]">
-            {running ? "Refreshing…" : "Refresh"}
+          <button type="button" onClick={reload} disabled={running} className="btn-ghost text-[13px]">
+            {running ? "Loading…" : "Reload"}
           </button>
         </div>
 

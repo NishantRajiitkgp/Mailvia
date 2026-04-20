@@ -40,3 +40,15 @@ export function verifyToken(kind: "u" | "o" | "c", token: string): string | null
 export function appUrl() {
   return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }
+
+// Constant-time equality for the cron bearer header.
+export function cronBearerOk(authHeader: string | null | undefined): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  const expected = `Bearer ${secret}`;
+  const given = authHeader ?? "";
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}

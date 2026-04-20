@@ -233,17 +233,15 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
       </div>
 
       {campaign.tracking_enabled && stats && stats.opens > 0 && (
-        <section className="sheet p-8 mb-10">
-          <div className="flex items-end justify-between mb-5">
+        <section className="sheet p-6 mb-8">
+          <div className="flex items-start justify-between mb-4">
             <div>
-              <div className="kicker">Reader hours · {stats.timezone}</div>
-              <h2 className="display-md mt-1">When they open</h2>
-              <p className="text-xs text-ink-500 mt-2">
-                Top hours for opens — consider sending ~1h before peak to land in the inbox at the right moment.
+              <h2 className="text-[15px] font-semibold">When they open</h2>
+              <p className="text-[12px] text-ink-500 mt-1">
+                Hourly opens in {stats.timezone}. Send ~1h before peak to land when the inbox is being read.
               </p>
             </div>
             {(() => {
-              const max = Math.max(...stats.opens_by_hour, 1);
               const top = stats.opens_by_hour
                 .map((c, h) => ({ c, h }))
                 .filter((x) => x.c > 0)
@@ -252,8 +250,8 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
               if (top.length === 0) return null;
               return (
                 <div className="text-right">
-                  <div className="kicker">Peak</div>
-                  <div className="text-sm font-mono mt-0.5">{top.map((t) => `${String(t.h).padStart(2, "0")}:00`).join(" · ")}</div>
+                  <div className="text-[11px] font-medium text-ink-500 uppercase tracking-wider">Peak</div>
+                  <div className="text-[12px] font-mono mt-0.5">{top.map((t) => `${String(t.h).padStart(2, "0")}:00`).join(" · ")}</div>
                 </div>
               );
             })()}
@@ -288,13 +286,10 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
       <div className="grid grid-cols-1 lg:grid-cols-[1fr,320px] gap-10">
         {/* main column */}
         <div className="space-y-10">
-          {/* the letter preview */}
-          <section className="sheet p-8">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <div className="kicker">Feature piece</div>
-                <h2 className="display-md mt-1">The letter</h2>
-              </div>
+          {/* preview */}
+          <section className="sheet p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[15px] font-semibold">Preview</h2>
               {previewRecipient && recipients.length > 1 && (
                 <div className="flex items-center gap-0.5">
                   <button
@@ -320,11 +315,13 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
               )}
             </div>
             {previewRecipient && (
-              <div className="kicker mb-4 pb-3 rule">
-                Rendered for <b className="normal-case tracking-normal text-ink-800 font-display italic">{previewRecipient.name}</b>
-                <span className="text-ink-400 normal-case tracking-normal"> @ </span>
-                <b className="normal-case tracking-normal text-ink-800 font-display italic">{previewRecipient.company}</b>
-                <span className="text-ink-400 ml-2 font-mono normal-case tracking-normal">&lt;{previewRecipient.email}&gt;</span>
+              <div className="mb-4 pb-3 border-b border-ink-200">
+                <div className="text-[13px] font-medium text-ink truncate">
+                  {previewRecipient.name}
+                  <span className="text-ink-400 font-normal"> · </span>
+                  {previewRecipient.company}
+                </div>
+                <div className="text-[11px] font-mono text-ink-500 truncate">{previewRecipient.email}</div>
               </div>
             )}
             <article className="email-preview rounded-md border border-ink-200 p-6 bg-paper text-ink">
@@ -345,27 +342,26 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
                 </div>
               )}
             </article>
-            <details className="mt-8 pt-4 rule">
-              <summary className="kicker cursor-pointer hover:text-ink">Show raw template</summary>
-              <pre className="whitespace-pre-wrap font-mono text-xs bg-ink-50 border border-ink-200 p-4 mt-3 max-h-80 overflow-auto">{campaign.template}</pre>
+            <details className="mt-6 pt-4 border-t border-ink-200">
+              <summary className="text-[12px] font-medium text-ink-500 hover:text-ink cursor-pointer">Show raw template</summary>
+              <pre className="whitespace-pre-wrap font-mono text-[12px] bg-surface border border-ink-200 rounded-md p-3 mt-3 max-h-80 overflow-auto">{campaign.template}</pre>
             </details>
           </section>
 
           {/* follow-ups */}
           {campaign.follow_ups_enabled && steps.length > 0 && (
-            <section className="sheet p-8">
-              <div className="kicker">Sequence</div>
-              <h2 className="display-md mt-1">Follow-up cadence</h2>
-              <div className="mt-6 space-y-6">
+            <section className="sheet p-6">
+              <h2 className="text-[15px] font-semibold mb-4">Follow-up sequence</h2>
+              <div className="space-y-4">
                 {steps.map((s) => (
-                  <div key={s.step_number} className="grid grid-cols-[60px,1fr] gap-5">
+                  <div key={s.step_number} className="grid grid-cols-[70px,1fr] gap-4">
                     <div>
-                      <div className="font-display text-3xl">№{String(s.step_number).padStart(2, "0")}</div>
-                      <div className="kicker mt-1">+{s.delay_days}d</div>
+                      <div className="text-[12px] font-semibold text-ink">Step {s.step_number}</div>
+                      <div className="text-[11px] text-ink-500 mt-0.5">+{s.delay_days}d delay</div>
                     </div>
-                    <div className="border-l border-ink-200 pl-5">
-                      {s.subject && <div className="text-sm font-medium mb-2">{s.subject}</div>}
-                      <pre className="whitespace-pre-wrap font-mono text-xs text-ink-700 max-h-48 overflow-auto">{s.template}</pre>
+                    <div className="border-l border-ink-200 pl-4">
+                      {s.subject && <div className="text-[13px] font-medium mb-1.5">{s.subject}</div>}
+                      <pre className="whitespace-pre-wrap font-mono text-[12px] text-ink-700 max-h-48 overflow-auto">{s.template}</pre>
                     </div>
                   </div>
                 ))}
@@ -375,18 +371,17 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
 
           {/* recipients table */}
           <section>
-            <div className="flex items-end justify-between mb-5">
-              <div>
-                <div className="kicker">Circulation</div>
-                <h2 className="display-md mt-1">Recipients <span className="text-ink-400">({total})</span></h2>
-              </div>
-              <div className="flex gap-1 text-xs">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[15px] font-semibold">Recipients <span className="text-ink-400 font-normal">({total})</span></h2>
+              <div className="flex items-center gap-1">
                 {(["all", "pending", "sent", "replied", "failed"] as const).map((f) => (
                   <button
                     key={f}
                     type="button"
                     onClick={() => setFilter(f)}
-                    className={`px-2.5 py-1 border border-ink-300 transition-colors ${filter === f ? "bg-ink text-paper border-ink" : "hover:bg-ink-100"}`}
+                    className={`text-[12px] px-2 py-1 rounded transition-colors capitalize cursor-pointer ${
+                      filter === f ? "bg-hover text-ink font-medium" : "text-ink-500 hover:bg-hover hover:text-ink"
+                    }`}
                   >
                     {f}
                   </button>
@@ -394,9 +389,9 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
               </div>
             </div>
 
-            <div className="sheet divide-y divide-ink-200 overflow-hidden">
-              <div className="grid grid-cols-[40px,1.2fr,1fr,1.4fr,auto,auto] gap-4 px-5 py-3 bg-ink-50 kicker">
-                <span>№</span>
+            <div className="sheet overflow-hidden">
+              <div className="grid grid-cols-[40px,1.2fr,1fr,1.4fr,auto,auto] gap-4 px-4 py-2.5 border-b border-ink-200 text-[12px] font-medium text-ink-500">
+                <span>#</span>
                 <span>Name</span>
                 <span>Company</span>
                 <span>Email</span>
@@ -404,16 +399,16 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
                 <span className="text-right">When</span>
               </div>
               {filtered.length === 0 && (
-                <div className="p-8 text-center text-sm text-ink-500">No recipients match this filter.</div>
+                <div className="p-8 text-center text-[13px] text-ink-500">No recipients match this filter.</div>
               )}
               {filtered.map((r, i) => (
-                <div key={r.id} className="grid grid-cols-[40px,1.2fr,1fr,1.4fr,auto,auto] gap-4 items-center px-5 py-3 text-sm hover:bg-ink-50 transition-colors">
+                <div key={r.id} className="grid grid-cols-[40px,1.2fr,1fr,1.4fr,auto,auto] gap-4 items-center px-4 py-2.5 text-[13px] border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors">
                   <span className="font-mono text-ink-400">{String(i + 1).padStart(3, "0")}</span>
                   <span className="font-medium truncate">{r.name}</span>
                   <span className="text-ink-700 truncate">{r.company}</span>
-                  <span className="font-mono text-xs text-ink-500 truncate">{r.email}</span>
+                  <span className="font-mono text-[11px] text-ink-500 truncate">{r.email}</span>
                   <span className={STATUS_CLASS[r.status]}>{r.status}</span>
-                  <span className="text-xs text-ink-500 text-right">
+                  <span className="text-[11px] text-ink-500 text-right">
                     {r.sent_at ? new Date(r.sent_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
                       : r.error ? <span className="text-red-600 truncate block max-w-[160px]" title={r.error}>{r.error}</span>
                       : "—"}
@@ -426,9 +421,9 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
 
         {/* sidebar */}
         <aside className="space-y-5">
-          <div className="sheet p-6">
-            <div className="kicker">Colophon</div>
-            <dl className="mt-3 text-sm space-y-2">
+          <div className="sheet p-5">
+            <h3 className="text-[14px] font-semibold mb-3">Sender</h3>
+            <dl className="text-[13px] space-y-1.5">
               <Row k="From">{currentSender ? (currentSender.from_name ?? currentSender.email) : "env fallback"}</Row>
               <Row k="Account" mono>{currentSender?.email ?? "—"}</Row>
               <Row k="Active days">{activeDays} / 7</Row>
@@ -438,9 +433,9 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
             </dl>
           </div>
 
-          <div className="sheet p-6">
-            <div className="kicker">Delivery options</div>
-            <dl className="mt-3 text-sm space-y-2">
+          <div className="sheet p-5">
+            <h3 className="text-[14px] font-semibold mb-3">Delivery</h3>
+            <dl className="text-[13px] space-y-1.5">
               <Row k="Follow-ups">{campaign.follow_ups_enabled ? `${steps.length} step${steps.length !== 1 ? "s" : ""}` : "off"}</Row>
               <Row k="Retry">{campaign.retry_enabled ? `on · ${campaign.max_retries}x` : "off"}</Row>
               <Row k="Tracking">{campaign.tracking_enabled ? "on" : "off"}</Row>
@@ -449,8 +444,8 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
           </div>
 
           {campaign.attachment_filename && (
-            <div className="sheet p-6">
-              <div className="kicker">Attachment</div>
+            <div className="sheet p-5">
+              <h3 className="text-[14px] font-semibold mb-2">Attachment</h3>
               <div className="mt-2 text-sm font-medium truncate" title={campaign.attachment_filename}>
                 {campaign.attachment_filename}
               </div>
@@ -458,11 +453,11 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
           )}
 
           {campaign.known_vars.length > 0 && (
-            <div className="sheet p-6">
-              <div className="kicker">Merge tags</div>
-              <div className="mt-3 flex flex-wrap gap-1">
+            <div className="sheet p-5">
+              <h3 className="text-[14px] font-semibold mb-3">Merge tags</h3>
+              <div className="flex flex-wrap gap-1.5">
                 {campaign.known_vars.map((v) => (
-                  <code key={v} className="text-xs px-2 py-1 border border-ink-300 font-mono">{"{{"}{v}{"}}"}</code>
+                  <code key={v} className="text-[11px] px-2 py-1 rounded border border-ink-200 bg-surface font-mono text-ink-700">{"{{"}{v}{"}}"}</code>
                 ))}
               </div>
             </div>
@@ -478,10 +473,10 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
 
 function Stat({ label, big, small, accent }: { label: string; big: string; small?: string; accent?: boolean }) {
   return (
-    <div className="border-r last:border-r-0 border-ink-200 border-t border-b py-5 px-6">
-      <div className="kicker">{label}</div>
-      <div className={`font-display text-4xl mt-1 tracking-tightest ${accent ? "text-accent-600" : "text-ink"}`}>{big}</div>
-      {small && <div className="text-xs text-ink-500 mt-0.5">{small}</div>}
+    <div className="border-r last:border-r-0 border-ink-200 border-t border-b py-4 px-5">
+      <div className="text-[12px] font-medium text-ink-500">{label}</div>
+      <div className={`text-[28px] font-bold mt-1 tracking-tight ${accent ? "text-ink" : "text-ink"}`}>{big}</div>
+      {small && <div className="text-[11px] text-ink-500 mt-0.5">{small}</div>}
     </div>
   );
 }

@@ -56,12 +56,12 @@ export async function GET(req: Request) {
         .from("recipients")
         .select("*", { count: "exact", head: true })
         .eq("campaign_id", c.id)
-        .eq("status", "sent");
+        .in("status", ["sent", "replied"]);
       const { count: failed } = await db
         .from("recipients")
         .select("*", { count: "exact", head: true })
         .eq("campaign_id", c.id)
-        .eq("status", "failed");
+        .in("status", ["failed", "bounced"]);
       return { ...c, total: total ?? 0, sent: sent ?? 0, failed: failed ?? 0 };
     })
   );

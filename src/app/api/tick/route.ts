@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { sendMail } from "@/lib/mail";
 import { render, toHtml, toPlain } from "@/lib/template";
 import { inWindow, dayKey } from "@/lib/time";
-import { signToken, appUrl } from "@/lib/tokens";
+import { signToken, appUrl, cronBearerOk } from "@/lib/tokens";
 import { downloadAttachment } from "@/lib/attachment";
 import { decryptSecret } from "@/lib/crypto";
 
@@ -15,10 +15,7 @@ function unauth() {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return NextResponse.json({ error: "CRON_SECRET not set" }, { status: 500 });
-  const header = req.headers.get("authorization") ?? "";
-  if (header !== `Bearer ${secret}`) return unauth();
+  if (!cronBearerOk(req.headers.get("authorization"))) return unauth();
 
   const db = supabaseAdmin();
   const now = new Date();

@@ -87,6 +87,11 @@ alter table recipients
   add column if not exists message_id text,
   add column if not exists domain text generated always as (lower(split_part(email, '@', 2))) stored;
 
+-- Older installs may have a stale status check constraint missing the new statuses.
+alter table recipients drop constraint if exists recipients_status_check;
+alter table recipients add constraint recipients_status_check
+  check (status in ('pending', 'sent', 'failed', 'skipped', 'replied', 'unsubscribed', 'bounced'));
+
 create index if not exists recipients_campaign_status_idx on recipients(campaign_id, status);
 create index if not exists recipients_row_idx on recipients(campaign_id, row_index);
 create index if not exists recipients_next_retry_idx on recipients(next_retry_at) where next_retry_at is not null;

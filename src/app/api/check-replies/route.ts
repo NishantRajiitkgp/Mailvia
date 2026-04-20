@@ -38,16 +38,29 @@ export async function GET(req: NextRequest) {
 
     const addrs = Array.from(new Set(messages.map((m) => m.from)));
 
+    // Two-step: first get this sender's campaign ids, then match recipients.
+    // (The earlier `campaigns!inner(sender_id)` inline filter was silently
+    // breaking the follow-up .update(), leading to replies being saved but
+    // recipient.status never flipping to 'replied'.)
+    const { data: campaignRows } = await db
+      .from("campaigns")
+      .select("id")
+      .eq("sender_id", s.id);
+    const campaignIds = (campaignRows ?? []).map((c) => c.id);
+    if (campaignIds.length === 0) {
+      results.push({ sender: s.email, checked: messages.length, marked_replied: 0, saved: 0 });
+      continue;
+    }
+
     const { data: matches } = await db
       .from("recipients")
-      .select("id, email, campaign_id, campaigns!inner(sender_id)")
+      .select("id, email, campaign_id, status")
       .in("email", addrs)
-      .in("status", ["sent", "pending", "replied"])
-      .eq("campaigns.sender_id", s.id);
+      .in("campaign_id", campaignIds);
 
-    const byEmail = new Map<string, { id: string; campaign_id: string }>();
+    const byEmail = new Map<string, { id: string; campaign_id: string; status: string }>();
     for (const m of matches ?? []) {
-      if (!byEmail.has(m.email)) byEmail.set(m.email, { id: m.id, campaign_id: m.campaign_id });
+      if (!byEmail.has(m.email)) byEmail.set(m.email, { id: m.id, campaign_id: m.campaign_id, status: m.status });
     }
 
     let savedCount = 0;
@@ -68,20 +81,27 @@ export async function GET(req: NextRequest) {
       if (!error) savedCount++;
     }
 
-    const ids = Array.from(byEmail.values()).map((v) => v.id);
-    if (ids.length > 0) {
-      await db
+    // Only flip statuses that aren't already 'replied' / 'unsubscribed' / 'bounced'.
+    const flipIds = Array.from(byEmail.values())
+      .filter((v) => v.status === "sent" || v.status === "pending")
+      .map((v) => v.id);
+
+    let markedReplied = 0;
+    if (flipIds.length > 0) {
+      const { data: updated, error: upErr } = await db
         .from("recipients")
         .update({
           status: "replied",
           replied_at: new Date().toISOString(),
           next_follow_up_at: null,
         })
-        .in("id", ids)
-        .in("status", ["sent", "pending"]); // don't overwrite existing 'replied'
+        .in("id", flipIds)
+        .select("id");
+      if (upErr) console.error("[check-replies] update failed:", upErr);
+      markedReplied = updated?.length ?? 0;
     }
 
-    results.push({ sender: s.email, checked: messages.length, marked_replied: ids.length, saved: savedCount });
+    results.push({ sender: s.email, checked: messages.length, marked_replied: markedReplied, saved: savedCount });
   }
 
   return NextResponse.json({ status: "ok", results });

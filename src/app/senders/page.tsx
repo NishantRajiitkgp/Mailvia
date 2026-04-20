@@ -69,6 +69,26 @@ export default function SendersPage() {
     await load();
   }
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{ label: string; from_name: string }>({ label: "", from_name: "" });
+  const [editSaving, setEditSaving] = useState(false);
+
+  function startEdit(s: Sender) {
+    setEditingId(s.id);
+    setEditForm({ label: s.label, from_name: s.from_name ?? "" });
+  }
+  async function saveEdit(id: string) {
+    setEditSaving(true);
+    await fetch(`/api/senders/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: editForm.label, from_name: editForm.from_name || null }),
+    });
+    setEditSaving(false);
+    setEditingId(null);
+    await load();
+  }
+
   return (
     <AppShell>
       <div className="page-narrow">
@@ -144,20 +164,57 @@ export default function SendersPage() {
         {senders && senders.length > 0 && (
           <div className="sheet overflow-hidden">
             {senders.map((s) => (
-              <div key={s.id} className="flex items-center justify-between gap-4 px-4 py-3 border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-medium truncate">{s.label}</span>
-                    {s.is_default && <span className="pill-live">default</span>}
+              <div key={s.id} className="border-b border-ink-100 last:border-b-0">
+                {editingId === s.id ? (
+                  <div className="px-4 py-4 bg-surface space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="label-cap">Label</label>
+                        <input
+                          className="field-boxed"
+                          value={editForm.label}
+                          onChange={(e) => setEditForm({ ...editForm, label: e.target.value })}
+                          autoFocus
+                        />
+                      </div>
+                      <div>
+                        <label className="label-cap">Display name (the recipient sees this)</label>
+                        <input
+                          className="field-boxed"
+                          value={editForm.from_name}
+                          onChange={(e) => setEditForm({ ...editForm, from_name: e.target.value })}
+                          placeholder="Nishant Raj"
+                        />
+                      </div>
+                    </div>
+                    <div className="text-[12px] text-ink-500">
+                      Email <span className="font-mono">{s.email}</span> can't be changed. Delete and re-add to switch accounts.
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button className="btn-quiet text-[12px]" onClick={() => setEditingId(null)}>Cancel</button>
+                      <button className="btn-accent text-[12px]" disabled={editSaving || !editForm.label.trim()} onClick={() => saveEdit(s.id)}>
+                        {editSaving ? "Saving…" : "Save"}
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-[13px] text-ink-500 truncate mt-0.5">
-                    {s.from_name ? <>{s.from_name} <span className="text-ink-400">&lt;{s.email}&gt;</span></> : s.email}
+                ) : (
+                  <div className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-hover transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[14px] font-medium truncate">{s.label}</span>
+                        {s.is_default && <span className="pill-live">default</span>}
+                      </div>
+                      <div className="text-[13px] text-ink-500 truncate mt-0.5">
+                        {s.from_name ? <>{s.from_name} <span className="text-ink-400">&lt;{s.email}&gt;</span></> : s.email}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button className="btn-quiet text-[12px]" onClick={() => startEdit(s)}>Edit</button>
+                      {!s.is_default && <button className="btn-quiet text-[12px]" onClick={() => setDefault(s.id)}>Set default</button>}
+                      <button className="btn-quiet text-[12px] text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => remove(s.id)}>Delete</button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  {!s.is_default && <button className="btn-quiet text-[12px]" onClick={() => setDefault(s.id)}>Set default</button>}
-                  <button className="btn-quiet text-[12px] text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => remove(s.id)}>Delete</button>
-                </div>
+                )}
               </div>
             ))}
           </div>

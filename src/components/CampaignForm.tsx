@@ -332,6 +332,21 @@ export default function CampaignForm({
           body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error(await errMsg(res));
+
+        // in edit mode, also import recipients if the user picked a fresh source
+        if (sourceTab === "sheets" && sheetUrl && sheetName) {
+          const upRes = await fetch(`/api/campaigns/${campaignId}/recipients/sheets`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ url: sheetUrl, sheet_name: sheetName }),
+          });
+          if (!upRes.ok) throw new Error(await errMsg(upRes));
+        } else if (sourceTab === "file" && file) {
+          const fd = new FormData();
+          fd.append("file", file);
+          const upRes = await fetch(`/api/campaigns/${campaignId}/recipients`, { method: "POST", body: fd });
+          if (!upRes.ok) throw new Error(await errMsg(upRes));
+        }
       }
 
       // replace follow-up steps (ok to send empty array)

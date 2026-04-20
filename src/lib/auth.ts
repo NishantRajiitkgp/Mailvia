@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 
 export type Session = { loggedIn?: boolean };
 
+const THIRTY_DAYS = 60 * 60 * 24 * 30;
+
 function options(): SessionOptions {
   const password = process.env.SESSION_SECRET;
   if (!password || password.length < 32) {
@@ -11,11 +13,13 @@ function options(): SessionOptions {
   return {
     password,
     cookieName: "mail_session",
+    ttl: THIRTY_DAYS,
     cookieOptions: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
       sameSite: "lax",
       path: "/",
+      maxAge: THIRTY_DAYS,
     },
   };
 }

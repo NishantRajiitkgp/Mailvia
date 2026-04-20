@@ -41,19 +41,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     row_index: r.row_index,
   }));
 
+  // Upsert with ON CONFLICT UPDATE — only the columns present in the payload
+  // are updated (name / company / vars / row_index), so re-uploading a sheet
+  // with fixed names updates them WITHOUT overwriting status / sent_at / tracking.
   const { data, error } = await db
     .from("recipients")
-    .upsert(rows, { onConflict: "campaign_id,email", ignoreDuplicates: true })
-    .select();
+    .upsert(rows, { onConflict: "campaign_id,email" })
+    .select("id");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // set known_vars on the campaign (union of columns seen)
   if (parsed.columns.length > 0) {
     await db.from("campaigns").update({ known_vars: parsed.columns }).eq("id", id);
   }
 
   return NextResponse.json({
-    inserted: data?.length ?? 0,
+    affected: data?.length ?? 0,
     total_valid: parsed.rows.length,
     columns: parsed.columns,
     parse_errors: parsed.errors,

@@ -180,3 +180,16 @@ for each row execute function set_updated_at();
 insert into storage.buckets (id, name, public)
 values ('attachments', 'attachments', false)
 on conflict (id) do nothing;
+
+-- ----- Row-Level Security: default-deny for anon / authenticated roles.
+-- The server uses SUPABASE_SERVICE_ROLE_KEY, which bypasses RLS, so this
+-- doesn't change app behavior. It's defense-in-depth against accidental
+-- client-side Supabase use leaking data. Safe to re-run.
+alter table senders            enable row level security;
+alter table campaigns          enable row level security;
+alter table recipients         enable row level security;
+alter table follow_up_steps    enable row level security;
+alter table send_log           enable row level security;
+alter table tracking_events    enable row level security;
+alter table unsubscribes       enable row level security;
+alter table replies            enable row level security;

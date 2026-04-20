@@ -17,7 +17,9 @@ export async function GET(req: NextRequest) {
   const { data: senders } = await db.from("senders").select("id, email, app_password");
   if (!senders || senders.length === 0) return NextResponse.json({ status: "no_senders" });
 
-  const since = new Date(Date.now() - 21 * 86400 * 1000);
+  // Look back 7 days — replies to older sends are edge-case and not worth
+  // the extra 60-second budget needed to scan the full 21-day inbox window.
+  const since = new Date(Date.now() - 7 * 86400 * 1000);
   const results: Array<{ sender: string; checked: number; marked_replied: number; saved: number }> = [];
 
   for (const s of senders) {

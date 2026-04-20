@@ -15,17 +15,34 @@ function fallbackEnv(): SenderCreds {
 
 const cache = new Map<string, nodemailer.Transporter>();
 
-function transporter(creds: SenderCreds) {
-  const hit = cache.get(creds.email);
-  if (hit) return hit;
-  const t = nodemailer.createTransport({
+function makeTransporter(creds: SenderCreds) {
+  return nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
     auth: { user: creds.email, pass: creds.appPassword.replace(/\s+/g, "") },
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 50,
+    socketTimeout: 20_000,
+    greetingTimeout: 10_000,
   });
+}
+
+function transporter(creds: SenderCreds) {
+  const hit = cache.get(creds.email);
+  if (hit) return hit;
+  const t = makeTransporter(creds);
   cache.set(creds.email, t);
   return t;
+}
+
+function invalidate(email: string) {
+  const hit = cache.get(email);
+  if (hit) {
+    try { hit.close(); } catch {}
+    cache.delete(email);
+  }
 }
 
 export async function sendMail(args: {
@@ -39,17 +56,24 @@ export async function sendMail(args: {
 }) {
   const creds = args.sender ?? fallbackEnv();
   const from = creds.fromName ? `"${creds.fromName}" <${creds.email}>` : creds.email;
-  const info = await transporter(creds).sendMail({
-    from,
-    to: args.to,
-    subject: args.subject,
-    text: args.text,
-    html: args.html,
-    replyTo: creds.email,
-    attachments: args.attachments,
-    headers: args.headers,
-  });
-  return info.messageId;
+  try {
+    const info = await transporter(creds).sendMail({
+      from,
+      to: args.to,
+      subject: args.subject,
+      text: args.text,
+      html: args.html,
+      replyTo: creds.email,
+      attachments: args.attachments,
+      headers: args.headers,
+    });
+    return info.messageId;
+  } catch (e) {
+    // SMTP session might be stale/broken — drop the cached transporter so the
+    // next send rebuilds a fresh connection instead of retrying a dead socket.
+    invalidate(creds.email);
+    throw e;
+  }
 }
 
 export async function verifyCredentials(creds: SenderCreds): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -57,7 +81,7 @@ export async function verifyCredentials(creds: SenderCreds): Promise<{ ok: true 
     await transporter(creds).verify();
     return { ok: true };
   } catch (e) {
-    cache.delete(creds.email);
+    invalidate(creds.email);
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }

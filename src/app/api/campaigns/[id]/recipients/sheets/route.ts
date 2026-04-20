@@ -48,8 +48,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }));
   const { data, error } = await db
     .from("recipients")
-    .upsert(payload, { onConflict: "campaign_id,email", ignoreDuplicates: true })
-    .select();
+    .upsert(payload, { onConflict: "campaign_id,email" })
+    .select("id");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   if (columns.length > 0) {

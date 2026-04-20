@@ -8,17 +8,21 @@ export type IncomingMessage = {
 };
 
 // Poll Gmail over IMAP for inbound messages.
-// Returns lowercased-address + subject + snippet + date for every message since `since`.
+// Caps scan at `maxMessages` most-recent and a `sinceDays` window so the cron
+// function doesn't time out on very active inboxes (Vercel 60s budget).
 export async function fetchIncomingMessages(
   creds: { email: string; appPassword: string },
-  since: Date
+  since: Date,
+  opts: { maxMessages?: number } = {}
 ): Promise<IncomingMessage[]> {
+  const max = opts.maxMessages ?? 500;
   const client = new ImapFlow({
     host: "imap.gmail.com",
     port: 993,
     secure: true,
     auth: { user: creds.email, pass: creds.appPassword.replace(/\s+/g, "") },
     logger: false,
+    socketTimeout: 25_000,
   });
 
   const out: IncomingMessage[] = [];
@@ -27,13 +31,15 @@ export async function fetchIncomingMessages(
     await client.mailboxOpen("INBOX");
     const uids = await client.search({ since });
     if (!uids || uids.length === 0) return [];
-    for await (const msg of client.fetch(uids as number[], { envelope: true, bodyStructure: false, source: false })) {
+    // Only inspect the newest `max` UIDs (UIDs are monotonic — largest = newest)
+    const slice = (uids as number[]).slice(-max);
+    for await (const msg of client.fetch(slice, { envelope: true, bodyStructure: false, source: false })) {
       const addr = msg.envelope?.from?.[0]?.address?.toLowerCase();
       if (!addr) continue;
       out.push({
         from: addr,
         subject: msg.envelope?.subject ?? null,
-        snippet: null, // envelope-only pull for speed; body fetch would be slow
+        snippet: null,
         date: msg.envelope?.date ?? null,
       });
     }

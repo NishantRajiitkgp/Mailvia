@@ -51,15 +51,17 @@ export async function GET(req: NextRequest) {
     if (s) sender = { email: s.email, appPassword: decryptSecret(s.app_password), fromName: s.from_name };
   }
 
-  // global gap check
+  // per-campaign gap check
   const { data: last } = await db
     .from("send_log")
     .select("sent_at")
+    .eq("campaign_id", campaign.id)
     .order("sent_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (last?.sent_at) {
-    const gapMs = campaign.gap_seconds * 1000;
+    const gapSeconds = campaign.gap_seconds ?? 120;
+    const gapMs = gapSeconds * 1000;
     if (now.getTime() - new Date(last.sent_at).getTime() < gapMs) {
       return NextResponse.json({ status: "gap_not_elapsed" });
     }
@@ -169,12 +171,43 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ status: "skipped_unsubscribed", to: recipient.email });
   }
 
+  // ATOMIC CLAIM — optimistic compare-and-set on last_sent_at so only one
+  // concurrent tick wins and sends this recipient. Prevents duplicate-sends
+  // if pg_cron + manual curl fire close together or SMTP is slow.
+  {
+    const prior = recipient.last_sent_at;
+    let q = db
+      .from("recipients")
+      .update({ last_sent_at: nowIso })
+      .eq("id", recipient.id)
+      .eq("status", "pending");
+    if (kind === "follow_up") {
+      q = db
+        .from("recipients")
+        .update({ last_sent_at: nowIso })
+        .eq("id", recipient.id)
+        .eq("status", "sent")
+        .eq("follow_up_count", recipient.follow_up_count);
+    }
+    // CAS on last_sent_at value
+    q = prior === null ? q.is("last_sent_at", null) : q.eq("last_sent_at", prior);
+    const { data: claim } = await q.select("id").maybeSingle();
+    if (!claim) {
+      return NextResponse.json({ status: "claim_lost", to: recipient.email, kind });
+    }
+  }
+
   // ---- render ----
   const vars = { ...(recipient.vars ?? {}), Name: recipient.name, Company: recipient.company };
+  // For the "Re:" prefix decision, look at the original campaign subject (the
+  // one the thread was opened with). A step-level subject override doesn't
+  // change whether this is a reply to the original thread.
+  const threadSubject = campaign.subject;
   const rawSubject = kind === "follow_up" && step.subject ? step.subject : campaign.subject;
-  const subject = kind === "follow_up" && recipient.message_id && !/^re:/i.test(rawSubject)
-    ? `Re: ${rawSubject}`
-    : rawSubject;
+  const subject =
+    kind === "follow_up" && recipient.message_id && !/^re:\s/i.test(threadSubject)
+      ? `Re: ${rawSubject.replace(/^re:\s*/i, "")}`
+      : rawSubject;
   const templateSrc = kind === "follow_up" ? step.template : campaign.template;
   const body = render(templateSrc, vars);
 
@@ -204,9 +237,13 @@ export async function GET(req: NextRequest) {
     headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
   // Thread follow-ups as replies to the initial message so Gmail groups them.
+  // RFC 5322 requires Message-IDs to be angle-bracket wrapped.
   if (kind === "follow_up" && recipient.message_id) {
-    headers["In-Reply-To"] = recipient.message_id;
-    headers["References"] = recipient.message_id;
+    const normalized = recipient.message_id.startsWith("<")
+      ? recipient.message_id
+      : `<${recipient.message_id}>`;
+    headers["In-Reply-To"] = normalized;
+    headers["References"] = normalized;
   }
 
   // ---- send ----
@@ -254,8 +291,10 @@ export async function GET(req: NextRequest) {
       error: null,
       next_retry_at: null,
     };
-    // Capture Message-ID so follow-ups can thread to it
-    if (sentMessageId && !recipient.message_id) update.message_id = sentMessageId;
+    // Capture Message-ID so follow-ups can thread to it (store angle-bracketed)
+    if (sentMessageId && !recipient.message_id) {
+      update.message_id = sentMessageId.startsWith("<") ? sentMessageId : `<${sentMessageId}>`;
+    }
     // schedule first follow-up if enabled
     if (campaign.follow_ups_enabled) {
       const { data: firstStep } = await db

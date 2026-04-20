@@ -210,6 +210,19 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
         <Stat label="Pending" big={`${pending}`} small={`${pct}% complete`} />
       </section>
 
+      {/* empty-recipients banner */}
+      {campaign.status === "draft" && total === 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-50 text-amber-800 px-4 py-3 flex items-start gap-3 mb-8">
+          <svg className="w-5 h-5 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <div className="flex-1 text-[13px]">
+            <div className="font-medium">No recipients on this campaign.</div>
+            <div className="mt-0.5">Click <a href={`/campaigns/${id}/edit`} className="underline font-medium">Edit</a> to add a Google Sheet or upload an Excel/CSV file. The "Start sending" button will appear once there's at least one recipient.</div>
+          </div>
+        </div>
+      )}
+
       {/* analytics row */}
       {campaign.tracking_enabled && stats && (
         <section className="grid grid-cols-2 md:grid-cols-4 gap-0 border-b border-ink-200 -mt-px">

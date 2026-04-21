@@ -40,6 +40,8 @@ export type Campaign = {
   max_retries: number;
   attachment_path: string | null;
   attachment_filename: string | null;
+  attachment_paths: string[];
+  attachment_filenames: string[];
   tracking_enabled: boolean;
   unsubscribe_enabled: boolean;
   start_at: string | null;

@@ -28,7 +28,10 @@ export type CampaignInitial = {
   max_retries: number;
   tracking_enabled: boolean;
   unsubscribe_enabled: boolean;
+  attachment_path?: string | null;
   attachment_filename: string | null;
+  attachment_paths?: string[];
+  attachment_filenames?: string[];
   known_vars: string[];
   start_at: string | null;
 };
@@ -97,9 +100,22 @@ export default function CampaignForm({
   const [steps, setSteps] = useState<FollowUpStep[]>(initialSteps ?? []);
 
   // ---------- attachment (edit mode can upload inline) ----------
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [attachmentFilename, setAttachmentFilename] = useState<string | null>(initial?.attachment_filename ?? null);
+  // Pending (not yet uploaded) files — staged locally until save
+  const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
+  // Already-uploaded attachments (edit mode, or after initial save)
+  const [existingAttachments, setExistingAttachments] = useState<{ path: string; filename: string }[]>(() => {
+    if (initial?.attachment_paths && initial.attachment_paths.length > 0) {
+      return initial.attachment_paths.map((p, i) => ({ path: p, filename: initial.attachment_filenames?.[i] ?? "attachment" }));
+    }
+    if (initial?.attachment_path && initial?.attachment_filename) {
+      return [{ path: initial.attachment_path, filename: initial.attachment_filename }];
+    }
+    return [];
+  });
   const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const attachInputRef = useRef<HTMLInputElement | null>(null);
+  const recipientFileInputRef = useRef<HTMLInputElement | null>(null);
+  const MAX_ATTACHMENTS = 5;
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -216,37 +232,66 @@ export default function CampaignForm({
     setSteps(steps.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   }
 
-  async function uploadAttachmentFor(campaignId: string, f: File) {
+  async function uploadOneTo(campaignId: string, f: File): Promise<{ path: string; filename: string }[]> {
     const fd = new FormData();
     fd.append("file", f);
     const r = await fetch(`/api/campaigns/${campaignId}/attachment`, { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.json()).error ?? "attachment_failed");
     const d = await r.json();
-    return d.attachment;
+    return d.attachments ?? [];
   }
 
-  async function inlineAttachUpload() {
-    if (!attachmentFile || !initial?.id) return;
-    setAttachmentBusy(true);
+  function addPending(files: FileList | File[]) {
+    const incoming = Array.from(files);
     setErr(null);
+    const room = MAX_ATTACHMENTS - existingAttachments.length - pendingAttachments.length;
+    if (room <= 0) {
+      setErr(`At most ${MAX_ATTACHMENTS} attachments per campaign.`);
+      return;
+    }
+    const accepted = incoming.slice(0, room);
+    if (accepted.length < incoming.length) {
+      setErr(`Only added ${accepted.length}/${incoming.length} — cap is ${MAX_ATTACHMENTS}.`);
+    }
+    setPendingAttachments([...pendingAttachments, ...accepted]);
+  }
+
+  function removePending(idx: number) {
+    setPendingAttachments(pendingAttachments.filter((_, i) => i !== idx));
+  }
+
+  async function removeExisting(path: string) {
+    if (!initial?.id) return;
+    if (!confirm("Remove this attachment?")) return;
+    setAttachmentBusy(true);
     try {
-      const att = await uploadAttachmentFor(initial.id, attachmentFile);
-      setAttachmentFilename(att.attachment_filename);
-      setAttachmentFile(null);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const r = await fetch(`/api/campaigns/${initial.id}/attachment?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+      if (r.ok) {
+        const d = await r.json();
+        setExistingAttachments(d.attachments ?? []);
+      }
     } finally {
       setAttachmentBusy(false);
     }
   }
 
-  async function inlineAttachRemove() {
-    if (!initial?.id) return;
-    if (!confirm("Remove the attachment?")) return;
+  // Upload all pending files; used by the "Upload now" button in edit mode.
+  async function uploadPendingNow() {
+    if (!initial?.id || pendingAttachments.length === 0) return;
     setAttachmentBusy(true);
-    await fetch(`/api/campaigns/${initial.id}/attachment`, { method: "DELETE" });
-    setAttachmentFilename(null);
-    setAttachmentBusy(false);
+    setErr(null);
+    try {
+      let latest: { path: string; filename: string }[] = existingAttachments;
+      for (const f of pendingAttachments) {
+        latest = await uploadOneTo(initial.id, f);
+      }
+      setExistingAttachments(latest);
+      setPendingAttachments([]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAttachmentBusy(false);
+    }
   }
 
   async function sendTestEmail() {
@@ -324,7 +369,9 @@ export default function CampaignForm({
         }
         if (!upRes.ok) throw new Error(await errMsg(upRes));
 
-        if (attachmentFile) await uploadAttachmentFor(campaignId!, attachmentFile);
+        for (const f of pendingAttachments) {
+          await uploadOneTo(campaignId!, f);
+        }
       } else {
         const res = await fetch(`/api/campaigns/${campaignId}`, {
           method: "PATCH",
@@ -332,6 +379,11 @@ export default function CampaignForm({
           body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error(await errMsg(res));
+
+        // Upload any still-pending attachments
+        for (const f of pendingAttachments) {
+          await uploadOneTo(campaignId!, f);
+        }
 
         // in edit mode, also import recipients if the user picked a fresh source
         if (sourceTab === "sheets" && sheetUrl && sheetName) {
@@ -472,25 +524,37 @@ export default function CampaignForm({
                   <p className="text-[12px] text-ink-500">Sheet must be shared as "Anyone with the link can view". Any column becomes a merge tag.</p>
                 </div>
               ) : (
-                <label className={`file-dropzone ${file ? "file-dropzone--filled" : ""}`}>
-                  <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                  <svg className="w-5 h-5 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-                  </svg>
-                  <div>
-                    {file ? (
-                      <>
-                        <div className="text-ink font-medium">{file.name}</div>
-                        <div className="text-[11px] text-ink-500">{(file.size / 1024).toFixed(1)} KB · click to replace</div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="text-ink font-medium">Click to upload</div>
-                        <div className="text-[11px] text-ink-500">.xlsx, .xls or .csv — any column becomes a merge tag</div>
-                      </>
-                    )}
-                  </div>
-                </label>
+                <>
+                  <input
+                    ref={recipientFileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => recipientFileInputRef.current?.click()}
+                    className={`w-full file-dropzone ${file ? "file-dropzone--filled" : ""}`}
+                  >
+                    <svg className="w-5 h-5 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                    </svg>
+                    <div className="text-left">
+                      {file ? (
+                        <>
+                          <div className="text-ink font-medium">{file.name}</div>
+                          <div className="text-[11px] text-ink-500">{(file.size / 1024).toFixed(1)} KB · click to replace</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-ink font-medium">Click to upload</div>
+                          <div className="text-[11px] text-ink-500">.xlsx, .xls or .csv — any column becomes a merge tag</div>
+                        </>
+                      )}
+                    </div>
+                  </button>
+                </>
               )}
             </div>
             <div>
@@ -584,28 +648,37 @@ export default function CampaignForm({
                 </div>
                 <div className="email-preview p-5 min-h-[380px] max-h-[600px] overflow-auto bg-paper text-ink">
                   <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
-                  {(attachmentFile || attachmentFilename) && (
-                    <div className="mt-6 pt-4 border-t border-ink-200">
-                      <div className="text-[11px] font-medium text-ink-500 uppercase tracking-wider mb-2">1 attachment</div>
-                      <div className="inline-flex items-center gap-2.5 pl-3 pr-4 py-2 border border-ink-200 rounded-md bg-surface max-w-full">
-                        <svg className="w-5 h-5 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l8.57-8.57A4 4 0 0117.98 8.6l-8.07 8.07a2 2 0 11-2.83-2.83l7.77-7.77" />
-                        </svg>
-                        <div className="min-w-0">
-                          <div className="text-[13px] font-medium truncate" title={attachmentFile?.name || attachmentFilename || ""}>
-                            {attachmentFile?.name || attachmentFilename}
-                          </div>
-                          {attachmentFile && (
-                            <div className="text-[11px] text-ink-500">
-                              {attachmentFile.size < 1024 * 1024
-                                ? `${(attachmentFile.size / 1024).toFixed(1)} KB`
-                                : `${(attachmentFile.size / 1024 / 1024).toFixed(1)} MB`}
+                  {(() => {
+                    const all = [
+                      ...existingAttachments.map((a) => ({ name: a.filename, size: null as number | null })),
+                      ...pendingAttachments.map((f) => ({ name: f.name, size: f.size })),
+                    ];
+                    if (all.length === 0) return null;
+                    return (
+                      <div className="mt-6 pt-4 border-t border-ink-200">
+                        <div className="text-[11px] font-medium text-ink-500 uppercase tracking-wider mb-2">
+                          {all.length} attachment{all.length !== 1 ? "s" : ""}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {all.map((a, i) => (
+                            <div key={i} className="inline-flex items-center gap-2 pl-2.5 pr-3 py-1.5 border border-ink-200 rounded-md bg-surface max-w-full">
+                              <svg className="w-4 h-4 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l8.57-8.57A4 4 0 0117.98 8.6l-8.07 8.07a2 2 0 11-2.83-2.83l7.77-7.77" />
+                              </svg>
+                              <div className="min-w-0">
+                                <div className="text-[12px] font-medium truncate max-w-[220px]" title={a.name}>{a.name}</div>
+                                {a.size !== null && (
+                                  <div className="text-[10px] text-ink-500">
+                                    {a.size < 1024 * 1024 ? `${(a.size / 1024).toFixed(1)} KB` : `${(a.size / 1024 / 1024).toFixed(1)} MB`}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          )}
+                          ))}
                         </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -772,43 +845,99 @@ export default function CampaignForm({
             </label>
           </div>
 
-          {/* attachment */}
+          {/* attachments (up to 5) */}
           <div className="sheet p-5">
-            <h3 className="text-[14px] font-semibold mb-3">Attachment</h3>
-            {attachmentFilename ? (
-              <div className="flex items-center justify-between gap-2 px-3 py-2.5 border border-ink-200 rounded-md bg-surface">
-                <div className="flex items-center gap-2 min-w-0">
-                  <svg className="w-4 h-4 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
-                  <span className="text-[13px] truncate" title={attachmentFilename}>{attachmentFilename}</span>
-                </div>
-                {mode === "edit" && (
-                  <button type="button" onClick={inlineAttachRemove} disabled={attachmentBusy} className="btn-quiet !px-2 !py-1 text-[12px] text-red-600 hover:bg-red-50 hover:text-red-700">
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M6 18L18 6" /></svg>
-                  </button>
-                )}
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[14px] font-semibold">Attachments</h3>
+              <span className="text-[11px] text-ink-500 font-mono">
+                {existingAttachments.length + pendingAttachments.length}/{MAX_ATTACHMENTS}
+              </span>
+            </div>
+
+            <input
+              ref={attachInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.doc,.docx,.zip,.txt,.rtf,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) addPending(e.target.files);
+                e.target.value = "";
+              }}
+            />
+
+            {(existingAttachments.length > 0 || pendingAttachments.length > 0) && (
+              <div className="space-y-1.5 mb-3">
+                {existingAttachments.map((a) => (
+                  <div key={a.path} className="flex items-center justify-between gap-2 px-3 py-2 border border-ink-200 rounded-md bg-surface">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className="w-4 h-4 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
+                      <span className="text-[13px] truncate" title={a.filename}>{a.filename}</span>
+                    </div>
+                    {mode === "edit" && (
+                      <button
+                        type="button"
+                        onClick={() => removeExisting(a.path)}
+                        disabled={attachmentBusy}
+                        className="btn-quiet !px-2 !py-1 text-[12px] text-red-600 hover:bg-red-50 hover:text-red-700 shrink-0"
+                        aria-label="Remove attachment"
+                      >
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M6 18L18 6" /></svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {pendingAttachments.map((f, i) => (
+                  <div key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 px-3 py-2 border border-dashed border-ink-300 rounded-md bg-surface">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className="w-4 h-4 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M5 11l7-7 7 7M5 20h14" /></svg>
+                      <div className="min-w-0">
+                        <div className="text-[13px] truncate">{f.name}</div>
+                        <div className="text-[10px] text-ink-500">
+                          {f.size < 1024 * 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${(f.size / 1024 / 1024).toFixed(1)} MB`}
+                          <span className="ml-1">· pending upload</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removePending(i)}
+                      className="btn-quiet !px-2 !py-1 text-[12px] text-ink-500 hover:text-ink shrink-0"
+                      aria-label="Remove pending file"
+                    >
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M6 18L18 6" /></svg>
+                    </button>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <label className={`file-dropzone ${attachmentFile ? "file-dropzone--filled" : ""}`}>
-                <input type="file" onChange={(e) => setAttachmentFile(e.target.files?.[0] ?? null)} />
-                <svg className="w-4 h-4 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.48-8.48l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 11-2.83-2.83l8.49-8.49" /></svg>
-                <div className="text-[12px]">
-                  {attachmentFile ? (
-                    <>
-                      <div className="text-ink font-medium truncate">{attachmentFile.name}</div>
-                      <div className="text-[11px] text-ink-500">{(attachmentFile.size / 1024).toFixed(1)} KB</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-ink font-medium">Attach a file</div>
-                      <div className="text-[11px] text-ink-500">PDF, DOC, ZIP · max 20MB</div>
-                    </>
-                  )}
-                </div>
-              </label>
             )}
-            {mode === "edit" && attachmentFile && !attachmentFilename && (
-              <button type="button" onClick={inlineAttachUpload} disabled={attachmentBusy} className="btn-ghost text-[12px] w-full mt-2">
-                {attachmentBusy ? "Uploading…" : "Upload now"}
+
+            {existingAttachments.length + pendingAttachments.length < MAX_ATTACHMENTS && (
+              <button
+                type="button"
+                onClick={() => attachInputRef.current?.click()}
+                className="w-full file-dropzone"
+              >
+                <svg className="w-4 h-4 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.48-8.48l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 11-2.83-2.83l8.49-8.49" />
+                </svg>
+                <div className="text-[12px] text-left">
+                  <div className="text-ink font-medium">
+                    {existingAttachments.length + pendingAttachments.length === 0 ? "Attach files" : "Add another file"}
+                  </div>
+                  <div className="text-[11px] text-ink-500">PDF, DOC, DOCX, ZIP · max 20MB each · up to {MAX_ATTACHMENTS} files</div>
+                </div>
+              </button>
+            )}
+
+            {mode === "edit" && pendingAttachments.length > 0 && (
+              <button
+                type="button"
+                onClick={uploadPendingNow}
+                disabled={attachmentBusy}
+                className="btn-ghost text-[12px] w-full mt-2"
+              >
+                {attachmentBusy ? "Uploading…" : `Upload ${pendingAttachments.length} pending ${pendingAttachments.length === 1 ? "file" : "files"}`}
               </button>
             )}
           </div>

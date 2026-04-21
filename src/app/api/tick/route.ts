@@ -277,9 +277,18 @@ export async function GET(req: NextRequest) {
   const html = toHtml(body, { wrapUrl, openPixelUrl, unsubscribeUrl: unsubUrl });
   const text = toPlain(body, { unsubscribeUrl: unsubUrl });
 
-  // ---- attachment ----
+  // ---- attachments (up to 5 files per campaign) ----
   let attachments: { filename: string; content: Buffer }[] | undefined;
-  if (campaign.attachment_path && campaign.attachment_filename) {
+  const paths: string[] = campaign.attachment_paths ?? [];
+  const names: string[] = campaign.attachment_filenames ?? [];
+  if (paths.length > 0) {
+    const loaded = await Promise.all(
+      paths.map((p, i) => downloadAttachment(db, p, names[i] ?? "attachment"))
+    );
+    const ok = loaded.filter((x): x is { filename: string; content: Buffer } => !!x);
+    if (ok.length > 0) attachments = ok;
+  } else if (campaign.attachment_path && campaign.attachment_filename) {
+    // legacy single-attachment fallback (for campaigns not yet migrated)
     const att = await downloadAttachment(db, campaign.attachment_path, campaign.attachment_filename);
     if (att) attachments = [att];
   }

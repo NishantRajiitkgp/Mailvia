@@ -34,7 +34,9 @@ const BodyEditor = forwardRef<BodyEditorHandle, Props>(function BodyEditor(
         HTMLAttributes: { rel: "noopener noreferrer" },
       }),
       Placeholder.configure({ placeholder: placeholder ?? "Write your message…" }),
-      Markdown.configure({ html: false, transformPastedText: true, transformCopiedText: true }),
+      // html: true preserves HTML blocks when pasting from Gmail / Docs / Word — bold,
+      // italic, underline, lists, headings, links all survive the round-trip through markdown.
+      Markdown.configure({ html: true, transformPastedText: true, transformCopiedText: true, linkify: true, breaks: true }),
     ],
     content: value,
     editorProps: {

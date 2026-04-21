@@ -36,7 +36,10 @@ export default function EditCampaignPage({ params }: { params: Promise<{ id: str
         max_retries: camp.max_retries ?? 2,
         tracking_enabled: camp.tracking_enabled ?? false,
         unsubscribe_enabled: camp.unsubscribe_enabled ?? true,
+        attachment_path: camp.attachment_path ?? null,
         attachment_filename: camp.attachment_filename ?? null,
+        attachment_paths: camp.attachment_paths ?? [],
+        attachment_filenames: camp.attachment_filenames ?? [],
         known_vars: camp.known_vars ?? [],
         start_at: camp.start_at ?? null,
       });

@@ -38,6 +38,8 @@ type Campaign = {
   tracking_enabled: boolean;
   unsubscribe_enabled: boolean;
   attachment_filename: string | null;
+  attachment_paths: string[];
+  attachment_filenames: string[];
   known_vars: string[];
   created_at: string;
   updated_at: string;
@@ -359,21 +361,29 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
             )}
             <article className="email-preview rounded-md border border-ink-200 p-6 bg-paper text-ink">
               <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
-              {campaign.attachment_filename && (
-                <div className="mt-6 pt-4 border-t border-ink-200">
-                  <div className="text-[11px] font-medium text-ink-500 uppercase tracking-wider mb-2">1 attachment</div>
-                  <div className="inline-flex items-center gap-2.5 pl-3 pr-4 py-2 border border-ink-200 rounded-md bg-surface max-w-full">
-                    <svg className="w-5 h-5 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l8.57-8.57A4 4 0 0117.98 8.6l-8.07 8.07a2 2 0 11-2.83-2.83l7.77-7.77" />
-                    </svg>
-                    <div className="min-w-0">
-                      <div className="text-[13px] font-medium truncate" title={campaign.attachment_filename}>
-                        {campaign.attachment_filename}
-                      </div>
+              {(() => {
+                const names = campaign.attachment_filenames && campaign.attachment_filenames.length > 0
+                  ? campaign.attachment_filenames
+                  : campaign.attachment_filename ? [campaign.attachment_filename] : [];
+                if (names.length === 0) return null;
+                return (
+                  <div className="mt-6 pt-4 border-t border-ink-200">
+                    <div className="text-[11px] font-medium text-ink-500 uppercase tracking-wider mb-2">
+                      {names.length} attachment{names.length !== 1 ? "s" : ""}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {names.map((n, i) => (
+                        <div key={i} className="inline-flex items-center gap-2 pl-2.5 pr-3 py-1.5 border border-ink-200 rounded-md bg-surface max-w-full">
+                          <svg className="w-4 h-4 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l8.57-8.57A4 4 0 0117.98 8.6l-8.07 8.07a2 2 0 11-2.83-2.83l7.77-7.77" />
+                          </svg>
+                          <span className="text-[12px] font-medium truncate max-w-[220px]" title={n}>{n}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </article>
             <details className="mt-6 pt-4 border-t border-ink-200">
               <summary className="text-[12px] font-medium text-ink-500 hover:text-ink cursor-pointer">Show raw template</summary>
@@ -556,14 +566,26 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
             </dl>
           </div>
 
-          {campaign.attachment_filename && (
-            <div className="sheet p-5">
-              <h3 className="text-[14px] font-semibold mb-2">Attachment</h3>
-              <div className="mt-2 text-sm font-medium truncate" title={campaign.attachment_filename}>
-                {campaign.attachment_filename}
+          {(() => {
+            const names = campaign.attachment_filenames && campaign.attachment_filenames.length > 0
+              ? campaign.attachment_filenames
+              : campaign.attachment_filename ? [campaign.attachment_filename] : [];
+            if (names.length === 0) return null;
+            return (
+              <div className="sheet p-5">
+                <h3 className="text-[14px] font-semibold mb-2">
+                  Attachments <span className="text-ink-400 font-normal">({names.length})</span>
+                </h3>
+                <ul className="space-y-1 mt-2">
+                  {names.map((n, i) => (
+                    <li key={i} className="text-[13px] font-medium truncate" title={n}>
+                      {n}
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {campaign.known_vars.length > 0 && (
             <div className="sheet p-5">

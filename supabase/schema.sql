@@ -53,11 +53,20 @@ alter table campaigns
   add column if not exists max_retries int not null default 2,
   add column if not exists attachment_path text,
   add column if not exists attachment_filename text,
+  add column if not exists attachment_paths text[] not null default array[]::text[],
+  add column if not exists attachment_filenames text[] not null default array[]::text[],
   add column if not exists tracking_enabled boolean not null default false,
   add column if not exists unsubscribe_enabled boolean not null default true,
   add column if not exists start_at timestamptz,
   add column if not exists known_vars text[] not null default array[]::text[],
   add column if not exists archived_at timestamptz;
+
+-- Migrate legacy single-attachment to the new arrays (idempotent).
+update campaigns
+set attachment_paths = array[attachment_path],
+    attachment_filenames = array[coalesce(attachment_filename, 'attachment')]
+where attachment_path is not null
+  and coalesce(array_length(attachment_paths, 1), 0) = 0;
 
 create index if not exists campaigns_archived_idx on campaigns(archived_at);
 

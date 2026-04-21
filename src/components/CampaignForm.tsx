@@ -303,13 +303,23 @@ export default function CampaignForm({
       ? { ...currentSample.vars, Name: currentSample.name, Company: currentSample.company }
       : { Name: "Test", Company: "Your Company" };
     try {
-      const r = await fetch("/api/test-send", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ to: testEmail, subject, template, sender_id: senderId, vars: sampleVars }),
-      });
-      if (!r.ok) setTestMsg((await r.json().catch(() => ({})))?.error ?? `HTTP ${r.status}`);
-      else setTestMsg(`Sent to ${testEmail} ✓`);
+      const fd = new FormData();
+      fd.append("to", testEmail);
+      fd.append("subject", subject);
+      fd.append("template", template);
+      fd.append("sender_id", senderId);
+      fd.append("vars", JSON.stringify(sampleVars));
+      if (initial?.id) fd.append("campaign_id", initial.id);
+      for (const f of pendingAttachments) fd.append("file", f);
+
+      const r = await fetch("/api/test-send", { method: "POST", body: fd });
+      if (!r.ok) {
+        setTestMsg((await r.json().catch(() => ({})))?.error ?? `HTTP ${r.status}`);
+      } else {
+        const d = await r.json().catch(() => ({}));
+        const n = d?.attached ?? 0;
+        setTestMsg(`Sent to ${testEmail}${n > 0 ? ` with ${n} attachment${n === 1 ? "" : "s"}` : ""} ✓`);
+      }
     } catch (e) {
       setTestMsg(e instanceof Error ? e.message : String(e));
     } finally {

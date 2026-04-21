@@ -69,6 +69,9 @@ export async function GET(req: NextRequest) {
     for (const msg of messages) {
       const hit = byEmail.get(msg.from);
       if (!hit) continue;
+      // Upsert with update-on-conflict so existing rows get their body fields
+      // backfilled when we re-fetch (e.g. a reply saved before the body-capture
+      // upgrade, or if parsing failed the first time).
       const { error } = await db.from("replies").upsert(
         {
           recipient_id: hit.id,
@@ -80,7 +83,7 @@ export async function GET(req: NextRequest) {
           body_html: msg.body_html,
           received_at: msg.date?.toISOString() ?? null,
         },
-        { onConflict: "recipient_id,received_at", ignoreDuplicates: true }
+        { onConflict: "recipient_id,received_at" }
       );
       if (!error) savedCount++;
     }

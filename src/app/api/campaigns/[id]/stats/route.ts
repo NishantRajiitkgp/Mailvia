@@ -35,8 +35,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     db.from("send_log").select("*", { count: "exact", head: true }).eq("campaign_id", id).eq("kind", "retry"),
     db.from("tracking_events").select("*", { count: "exact", head: true }).eq("campaign_id", id).eq("kind", "open"),
     db.from("tracking_events").select("*", { count: "exact", head: true }).eq("campaign_id", id).eq("kind", "click"),
-    db.from("tracking_events").select("recipient_id").eq("campaign_id", id).eq("kind", "open"),
-    db.from("tracking_events").select("recipient_id").eq("campaign_id", id).eq("kind", "click"),
+    db.from("tracking_events").select("recipient_id").eq("campaign_id", id).eq("kind", "open").range(0, 99999),
+    db.from("tracking_events").select("recipient_id").eq("campaign_id", id).eq("kind", "click").range(0, 99999),
   ]);
 
   const uniqOpen = new Set((uniqueOpeners.data ?? []).map((r: { recipient_id: string }) => r.recipient_id)).size;
@@ -50,7 +50,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     .from("tracking_events")
     .select("created_at")
     .eq("campaign_id", id)
-    .eq("kind", "open");
+    .eq("kind", "open")
+    .range(0, 99999);
   const opensByHour = new Array(24).fill(0);
   const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false });
   (openRows ?? []).forEach((o: { created_at: string }) => {

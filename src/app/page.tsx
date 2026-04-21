@@ -125,7 +125,8 @@ export default function Home() {
 
         {filtered.length > 0 && (
           <div className="sheet overflow-hidden">
-            <div className="grid grid-cols-[1fr,auto,120px,100px] gap-4 px-4 py-2.5 border-b border-ink-200 text-[12px] font-medium text-ink-500">
+            {/* desktop table header */}
+            <div className="hidden md:grid grid-cols-[1fr,auto,120px,100px] gap-4 px-4 py-2.5 border-b border-ink-200 text-[12px] font-medium text-ink-500">
               <span>Name</span>
               <span className="text-right">Progress</span>
               <span>Status</span>
@@ -137,13 +138,28 @@ export default function Home() {
                 <Link
                   key={c.id}
                   href={`/campaigns/${c.id}`}
-                  className="grid grid-cols-[1fr,auto,120px,100px] gap-4 px-4 py-3 border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors"
+                  className="block md:grid md:grid-cols-[1fr,auto,120px,100px] md:gap-4 px-4 py-3 border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors"
                 >
+                  {/* mobile: stacked; desktop: first column */}
                   <div className="min-w-0">
-                    <div className="text-[14px] font-medium text-ink truncate">{c.name}</div>
+                    <div className="flex items-center gap-2 md:block">
+                      <div className="text-[14px] font-medium text-ink truncate flex-1 md:flex-initial">{c.name}</div>
+                      <span className="md:hidden shrink-0">{statusPill(c.status)}</span>
+                    </div>
                     <div className="text-[12px] text-ink-500 truncate mt-0.5">{c.subject}</div>
+                    {/* mobile-only progress bar under name */}
+                    <div className="md:hidden flex items-center gap-2 mt-2">
+                      <div className="flex-1 h-1 bg-ink-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-ink" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-[11px] text-ink-500 font-mono tabular-nums whitespace-nowrap">
+                        {c.sent} / {c.total} · {pct}%
+                      </span>
+                    </div>
+                    <div className="md:hidden text-[11px] text-ink-500 mt-1">Updated {relative(c.updated_at)}</div>
                   </div>
-                  <div className="text-right">
+                  {/* desktop-only columns */}
+                  <div className="hidden md:block text-right">
                     <div className="text-[13px] font-mono">{c.sent} / {c.total}</div>
                     <div className="flex items-center gap-1.5 justify-end mt-1">
                       <div className="w-16 h-1 bg-ink-100 rounded-full overflow-hidden">
@@ -152,8 +168,8 @@ export default function Home() {
                       <span className="text-[11px] text-ink-400 font-mono">{pct}%</span>
                     </div>
                   </div>
-                  <div className="flex items-center">{statusPill(c.status)}</div>
-                  <div className="text-[12px] text-ink-500 text-right">{relative(c.updated_at)}</div>
+                  <div className="hidden md:flex items-center">{statusPill(c.status)}</div>
+                  <div className="hidden md:block text-[12px] text-ink-500 text-right">{relative(c.updated_at)}</div>
                 </Link>
               );
             })}

@@ -403,7 +403,8 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
             </div>
 
             <div className="sheet overflow-hidden">
-              <div className="grid grid-cols-[40px,1.2fr,1fr,1.4fr,auto,auto] gap-4 px-4 py-2.5 border-b border-ink-200 text-[12px] font-medium text-ink-500">
+              {/* desktop header */}
+              <div className="hidden md:grid grid-cols-[40px,1.2fr,1fr,1.4fr,auto,auto] gap-4 px-4 py-2.5 border-b border-ink-200 text-[12px] font-medium text-ink-500">
                 <span>#</span>
                 <span>Name</span>
                 <span>Company</span>
@@ -414,20 +415,44 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
               {filtered.length === 0 && (
                 <div className="p-8 text-center text-[13px] text-ink-500">No recipients match this filter.</div>
               )}
-              {filtered.map((r, i) => (
-                <div key={r.id} className="grid grid-cols-[40px,1.2fr,1fr,1.4fr,auto,auto] gap-4 items-center px-4 py-2.5 text-[13px] border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors">
-                  <span className="font-mono text-ink-400">{String(i + 1).padStart(3, "0")}</span>
-                  <span className="font-medium truncate">{r.name}</span>
-                  <span className="text-ink-700 truncate">{r.company}</span>
-                  <span className="font-mono text-[11px] text-ink-500 truncate">{r.email}</span>
-                  <span className={STATUS_CLASS[r.status]}>{r.status}</span>
-                  <span className="text-[11px] text-ink-500 text-right">
-                    {r.sent_at ? new Date(r.sent_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-                      : r.error ? <span className="text-red-600 truncate block max-w-[160px]" title={r.error}>{r.error}</span>
-                      : "—"}
-                  </span>
-                </div>
-              ))}
+              {filtered.map((r, i) => {
+                const when = r.sent_at
+                  ? new Date(r.sent_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+                  : r.error ? null : "—";
+                const idx = String(i + 1).padStart(3, "0");
+                return (
+                  <div key={r.id} className="border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors">
+                    {/* mobile */}
+                    <div className="md:hidden px-4 py-3 text-[13px]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] text-ink-400 shrink-0">{idx}</span>
+                            <span className="font-medium truncate">{r.name}</span>
+                          </div>
+                          <div className="text-[12px] text-ink-600 truncate mt-0.5">{r.company}</div>
+                          <div className="font-mono text-[11px] text-ink-500 truncate mt-0.5">{r.email}</div>
+                        </div>
+                        <span className={`${STATUS_CLASS[r.status]} shrink-0`}>{r.status}</span>
+                      </div>
+                      <div className="text-[11px] text-ink-500 mt-2">
+                        {when !== null ? when : r.error && <span className="text-red-600">{r.error}</span>}
+                      </div>
+                    </div>
+                    {/* desktop */}
+                    <div className="hidden md:grid grid-cols-[40px,1.2fr,1fr,1.4fr,auto,auto] gap-4 items-center px-4 py-2.5 text-[13px]">
+                      <span className="font-mono text-ink-400">{idx}</span>
+                      <span className="font-medium truncate">{r.name}</span>
+                      <span className="text-ink-700 truncate">{r.company}</span>
+                      <span className="font-mono text-[11px] text-ink-500 truncate">{r.email}</span>
+                      <span className={STATUS_CLASS[r.status]}>{r.status}</span>
+                      <span className="text-[11px] text-ink-500 text-right">
+                        {when !== null ? when : r.error && <span className="text-red-600 truncate block max-w-[160px]" title={r.error}>{r.error}</span>}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
         </div>

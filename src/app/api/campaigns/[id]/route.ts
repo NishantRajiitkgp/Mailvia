@@ -53,7 +53,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     .from("recipients")
     .select("*")
     .eq("campaign_id", id)
-    .order("row_index", { ascending: true });
+    .order("row_index", { ascending: true })
+    .range(0, 99999);
   return NextResponse.json({ campaign, recipients: recipients ?? [] });
 }
 

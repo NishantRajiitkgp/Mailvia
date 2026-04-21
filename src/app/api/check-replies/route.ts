@@ -76,6 +76,8 @@ export async function GET(req: NextRequest) {
           from_email: msg.from,
           subject: msg.subject,
           snippet: msg.snippet,
+          body_text: msg.body_text,
+          body_html: msg.body_html,
           received_at: msg.date?.toISOString() ?? null,
         },
         { onConflict: "recipient_id,received_at", ignoreDuplicates: true }

@@ -12,7 +12,7 @@ export async function GET() {
   const { data, error } = await db
     .from("replies")
     .select(`
-      id, from_email, subject, snippet, received_at, created_at,
+      id, from_email, subject, snippet, body_text, body_html, received_at, created_at,
       recipient:recipients(id, name, company),
       campaign:campaigns(id, name)
     `)

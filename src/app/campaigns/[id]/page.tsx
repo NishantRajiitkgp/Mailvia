@@ -6,6 +6,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import { render, toHtml } from "@/lib/template";
 import type { Schedule } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
+import ActivityDrawer, { type ActivityRecipient } from "@/components/ActivityDrawer";
 
 type Sender = { id: string; label: string; email: string; from_name: string | null; is_default: boolean };
 type FollowUpStep = { step_number: number; delay_days: number; subject: string | null; template: string };
@@ -80,6 +81,9 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
   const [stats, setStats] = useState<Stats | null>(null);
   const [previewIdx, setPreviewIdx] = useState(0);
   const [filter, setFilter] = useState<"all" | Recipient["status"]>("all");
+  const [activity, setActivity] = useState<{ recipients: ActivityRecipient[]; links: { url: string; total_clicks: number; unique_clickers: number }[] } | null>(null);
+  const [activeRecipient, setActiveRecipient] = useState<ActivityRecipient | null>(null);
+  const [sortByScore, setSortByScore] = useState(false);
 
   async function load() {
     const r = await fetch(`/api/campaigns/${id}`, { cache: "no-store" });
@@ -97,13 +101,18 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
     const r = await fetch(`/api/campaigns/${id}/stats`, { cache: "no-store" });
     if (r.ok) setStats(await r.json());
   }
+  async function loadActivity() {
+    const r = await fetch(`/api/campaigns/${id}/activity`, { cache: "no-store" });
+    if (r.ok) setActivity(await r.json());
+  }
 
   useEffect(() => {
     load();
     loadSteps();
     loadStats();
+    loadActivity();
     fetch("/api/senders", { cache: "no-store" }).then((r) => r.json()).then((d) => setSenders(d.senders ?? []));
-    const t = setInterval(() => { load(); loadStats(); }, 10_000);
+    const t = setInterval(() => { load(); loadStats(); loadActivity(); }, 10_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -165,7 +174,18 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
   const pct = total ? Math.round((sent / total) * 100) : 0;
   const activeDays = campaign.schedule ? Object.values(campaign.schedule).filter((d) => d.enabled).length : 7;
 
-  const filtered = filter === "all" ? recipients : recipients.filter((r) => r.status === filter);
+  // Merge activity (scores/opens/clicks) into the recipients rows
+  const activityById = new Map<string, ActivityRecipient>();
+  for (const r of activity?.recipients ?? []) activityById.set(r.id, r);
+
+  let filtered = filter === "all" ? recipients : recipients.filter((r) => r.status === filter);
+  if (sortByScore) {
+    filtered = [...filtered].sort((a, b) => {
+      const sa = activityById.get(a.id)?.score ?? 0;
+      const sb = activityById.get(b.id)?.score ?? 0;
+      return sb - sa;
+    });
+  }
   const previewRecipient = recipients[previewIdx];
 
   const previewVars: Record<string, string> = previewRecipient
@@ -382,23 +402,67 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
             </section>
           )}
 
+          {/* Link click breakdown */}
+          {activity && activity.links.length > 0 && (
+            <section className="sheet p-6">
+              <h2 className="text-[15px] font-semibold mb-3">Links clicked</h2>
+              <div className="space-y-2">
+                {activity.links.slice(0, 10).map((l) => {
+                  const pct = total ? Math.round((l.unique_clickers / total) * 100) : 0;
+                  return (
+                    <div key={l.url} className="grid grid-cols-[1fr,auto,auto] items-center gap-3 text-[13px]">
+                      <a
+                        href={l.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate text-ink hover:underline decoration-ink-300 underline-offset-2"
+                        title={l.url}
+                      >
+                        {l.url.replace(/^https?:\/\//, "")}
+                      </a>
+                      <div className="text-ink-500 font-mono text-[11px] tabular-nums whitespace-nowrap">
+                        {l.unique_clickers}{l.unique_clickers === 1 ? " clicker" : " clickers"} · {l.total_clicks} {l.total_clicks === 1 ? "click" : "clicks"}
+                      </div>
+                      <div className="w-24">
+                        <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-ink" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {/* recipients table */}
           <section>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h2 className="text-[15px] font-semibold">Recipients <span className="text-ink-400 font-normal">({total})</span></h2>
-              <div className="flex items-center gap-1">
-                {(["all", "pending", "sent", "replied", "failed"] as const).map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => setFilter(f)}
-                    className={`text-[12px] px-2 py-1 rounded transition-colors capitalize cursor-pointer ${
-                      filter === f ? "bg-hover text-ink font-medium" : "text-ink-500 hover:bg-hover hover:text-ink"
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSortByScore(!sortByScore)}
+                  className={`text-[12px] px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${sortByScore ? "bg-hover text-ink font-medium" : "text-ink-500 hover:bg-hover hover:text-ink"}`}
+                  title="Sort by engagement score (opens × 1 + clicks × 5 + reply × 20)"
+                >
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M6 12h12M10 18h4" /></svg>
+                  {sortByScore ? "By score" : "By order"}
+                </button>
+                <div className="flex items-center gap-1">
+                  {(["all", "pending", "sent", "replied", "failed"] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setFilter(f)}
+                      className={`text-[12px] px-2 py-1 rounded transition-colors capitalize cursor-pointer ${
+                        filter === f ? "bg-hover text-ink font-medium" : "text-ink-500 hover:bg-hover hover:text-ink"
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -420,8 +484,15 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
                   ? new Date(r.sent_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
                   : r.error ? null : "—";
                 const idx = String(i + 1).padStart(3, "0");
+                const act = activityById.get(r.id);
+                const engage = act && (act.opens > 0 || act.clicks > 0 || act.replied);
                 return (
-                  <div key={r.id} className="border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors">
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => act && setActiveRecipient(act)}
+                    className="w-full text-left border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors cursor-pointer"
+                  >
                     {/* mobile */}
                     <div className="md:hidden px-4 py-3 text-[13px]">
                       <div className="flex items-start justify-between gap-3">
@@ -435,14 +506,18 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
                         </div>
                         <span className={`${STATUS_CLASS[r.status]} shrink-0`}>{r.status}</span>
                       </div>
-                      <div className="text-[11px] text-ink-500 mt-2">
-                        {when !== null ? when : r.error && <span className="text-red-600">{r.error}</span>}
+                      <div className="flex items-center justify-between mt-2 text-[11px] text-ink-500">
+                        <span>{when !== null ? when : r.error && <span className="text-red-600">{r.error}</span>}</span>
+                        {engage && <EngagementBadge act={act!} />}
                       </div>
                     </div>
                     {/* desktop */}
                     <div className="hidden md:grid grid-cols-[40px,1.2fr,1fr,1.4fr,auto,auto] gap-4 items-center px-4 py-2.5 text-[13px]">
                       <span className="font-mono text-ink-400">{idx}</span>
-                      <span className="font-medium truncate">{r.name}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-medium truncate">{r.name}</span>
+                        {engage && <EngagementBadge act={act!} />}
+                      </div>
                       <span className="text-ink-700 truncate">{r.company}</span>
                       <span className="font-mono text-[11px] text-ink-500 truncate">{r.email}</span>
                       <span className={STATUS_CLASS[r.status]}>{r.status}</span>
@@ -450,7 +525,7 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
                         {when !== null ? when : r.error && <span className="text-red-600 truncate block max-w-[160px]" title={r.error}>{r.error}</span>}
                       </span>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -504,8 +579,41 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
           <Link href={`/campaigns/${id}/edit`} className="btn-primary w-full">Edit campaign</Link>
         </aside>
       </div>
+
+      <ActivityDrawer recipient={activeRecipient} onClose={() => setActiveRecipient(null)} />
     </div>
     </AppShell>
+  );
+}
+
+function EngagementBadge({ act }: { act: ActivityRecipient }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-700 shrink-0">
+      {act.opens > 0 && (
+        <span className="inline-flex items-center gap-0.5" title={`${act.opens} opens`}>
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          {act.opens}
+        </span>
+      )}
+      {act.clicks > 0 && (
+        <span className="inline-flex items-center gap-0.5 text-ink" title={`${act.clicks} clicks`}>
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+          </svg>
+          {act.clicks}
+        </span>
+      )}
+      {act.replied && (
+        <span className="inline-flex items-center gap-0.5 text-emerald-600" title="Replied">
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 17l-5-5 5-5M4 12h11a5 5 0 015 5v2" />
+          </svg>
+        </span>
+      )}
+    </span>
   );
 }
 

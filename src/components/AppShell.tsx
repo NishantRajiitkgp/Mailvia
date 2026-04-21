@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 import Logo from "@/components/Logo";
+import CommandPalette from "@/components/CommandPalette";
 
 const NAV = [
   { href: "/", label: "Campaigns", icon: CampaignIcon },
@@ -111,6 +112,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 md:ml-60 pt-12 md:pt-0 min-w-0">
         {children}
       </main>
+
+      <CommandPalette />
     </div>
   );
 }

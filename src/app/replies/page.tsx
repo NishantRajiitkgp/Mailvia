@@ -3,21 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
-
-type Reply = {
-  id: string;
-  from_email: string;
-  subject: string | null;
-  snippet: string | null;
-  received_at: string | null;
-  created_at: string;
-  recipient: { id: string; name: string; company: string } | null;
-  campaign: { id: string; name: string } | null;
-};
+import ReplyDrawer, { type ReplyItem } from "@/components/ReplyDrawer";
 
 export default function RepliesPage() {
-  const [replies, setReplies] = useState<Reply[] | null>(null);
+  const [replies, setReplies] = useState<ReplyItem[] | null>(null);
   const [running, setRunning] = useState(false);
+  const [active, setActive] = useState<ReplyItem | null>(null);
 
   async function load() {
     const r = await fetch("/api/replies", { cache: "no-store" });
@@ -62,7 +53,12 @@ export default function RepliesPage() {
         {replies && replies.length > 0 && (
           <div className="sheet overflow-hidden">
             {replies.map((r) => (
-              <div key={r.id} className="flex items-start gap-4 px-4 py-3 border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors">
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setActive(r)}
+                className="w-full text-left flex items-start gap-4 px-4 py-3 border-b border-ink-100 last:border-b-0 hover:bg-hover transition-colors cursor-pointer"
+              >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[14px] font-medium truncate">
@@ -72,7 +68,11 @@ export default function RepliesPage() {
                       <span className="text-[13px] text-ink-500">@ {r.recipient.company}</span>
                     )}
                     {r.campaign && (
-                      <Link href={`/campaigns/${r.campaign.id}`} className="pill-paper hover:bg-ink hover:text-paper transition-colors">
+                      <Link
+                        href={`/campaigns/${r.campaign.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="pill-paper hover:bg-ink hover:text-paper transition-colors"
+                      >
                         {r.campaign.name}
                       </Link>
                     )}
@@ -80,6 +80,9 @@ export default function RepliesPage() {
                   <div className="text-[13px] text-ink-700 mt-0.5 truncate" title={r.subject ?? ""}>
                     {r.subject ?? <span className="italic text-ink-400">(no subject)</span>}
                   </div>
+                  {r.snippet && (
+                    <div className="text-[12px] text-ink-500 mt-0.5 line-clamp-1">{r.snippet}</div>
+                  )}
                   <div className="text-[11px] font-mono text-ink-400 mt-0.5">{r.from_email}</div>
                 </div>
                 <div className="text-[12px] text-ink-500 whitespace-nowrap pt-1">
@@ -87,10 +90,12 @@ export default function RepliesPage() {
                     ? new Date(r.received_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
                     : new Date(r.created_at).toLocaleString("en-GB", { day: "2-digit", month: "short" })}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
+
+        <ReplyDrawer reply={active} onClose={() => setActive(null)} />
       </div>
     </AppShell>
   );

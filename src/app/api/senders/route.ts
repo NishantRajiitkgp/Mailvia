@@ -22,6 +22,7 @@ const CreateSchema = z.object({
     ),
   from_name: z.string().max(200).optional().nullable(),
   is_default: z.boolean().optional(),
+  warmup_enabled: z.boolean().optional(),
 });
 
 async function auth() {
@@ -34,7 +35,7 @@ export async function GET() {
   const db = supabaseAdmin();
   const { data, error } = await db
     .from("senders")
-    .select("id, label, email, from_name, is_default, created_at")
+    .select("id, label, email, from_name, is_default, warmup_enabled, warmup_started_at, created_at")
     .order("is_default", { ascending: false })
     .order("created_at", { ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
     const msg = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(" · ");
     return NextResponse.json({ error: msg }, { status: 400 });
   }
-  const { label, email, app_password, from_name, is_default } = parsed.data;
+  const { label, email, app_password, from_name, is_default, warmup_enabled } = parsed.data;
 
   // verify SMTP login works before saving
   const pw = app_password.replace(/\s+/g, "");
@@ -68,8 +69,10 @@ export async function POST(req: NextRequest) {
       app_password: encryptSecret(pw),
       from_name: from_name ?? null,
       is_default: !!is_default,
+      warmup_enabled: !!warmup_enabled,
+      warmup_started_at: warmup_enabled ? new Date().toISOString() : null,
     })
-    .select("id, label, email, from_name, is_default, created_at")
+    .select("id, label, email, from_name, is_default, warmup_enabled, warmup_started_at, created_at")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ sender: data });

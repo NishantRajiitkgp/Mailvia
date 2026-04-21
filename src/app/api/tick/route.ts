@@ -6,6 +6,7 @@ import { inWindow, dayKey } from "@/lib/time";
 import { signToken, appUrl, cronBearerOk } from "@/lib/tokens";
 import { downloadAttachment } from "@/lib/attachment";
 import { decryptSecret } from "@/lib/crypto";
+import { warmupCapForSender } from "@/lib/warmup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,8 +51,21 @@ export async function GET(req: NextRequest) {
   // Sort: never-sent first (0), then oldest-last-send first.
   running.sort((a, b) => (lastSendMs.get(a.id) ?? 0) - (lastSendMs.get(b.id) ?? 0));
 
+  // Pre-fetch warmup state for every sender referenced by the running campaigns.
+  const senderIds = Array.from(new Set(running.map((c) => c.sender_id).filter((x): x is string => !!x)));
+  const warmupMap = new Map<string, { warmup_enabled: boolean; warmup_started_at: string | null }>();
+  if (senderIds.length > 0) {
+    const { data: sendersInfo } = await db
+      .from("senders")
+      .select("id, warmup_enabled, warmup_started_at")
+      .in("id", senderIds);
+    for (const s of sendersInfo ?? []) {
+      warmupMap.set(s.id, { warmup_enabled: !!s.warmup_enabled, warmup_started_at: s.warmup_started_at });
+    }
+  }
+
   // Walk the sorted list — first campaign that passes ALL gates (window,
-  // start_at, gap, daily cap) wins the tick. The rest wait for next tick.
+  // start_at, gap, daily cap incl. warmup) wins the tick.
   let campaign: typeof running[0] | null = null;
   let todayCount = 0;
   const skipped: Array<{ id: string; name: string; reason: string }> = [];
@@ -81,8 +95,16 @@ export async function GET(req: NextRequest) {
       .select("*", { count: "exact", head: true })
       .eq("campaign_id", c.id)
       .eq("day", today);
-    if ((count ?? 0) >= c.daily_cap) {
-      skipped.push({ id: c.id, name: c.name, reason: "daily_cap_reached" });
+    // Warmup-aware effective cap: min(campaign cap, today's warmup allowance).
+    const warmupInfo = c.sender_id ? warmupMap.get(c.sender_id) : undefined;
+    const warmupCap = warmupInfo ? warmupCapForSender(warmupInfo, now) : Infinity;
+    const effectiveCap = Math.min(c.daily_cap, warmupCap);
+    if ((count ?? 0) >= effectiveCap) {
+      skipped.push({
+        id: c.id,
+        name: c.name,
+        reason: warmupCap < c.daily_cap ? "warmup_cap_reached" : "daily_cap_reached",
+      });
       continue;
     }
 

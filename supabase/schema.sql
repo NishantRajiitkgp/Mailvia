@@ -9,8 +9,14 @@ create table if not exists senders (
   app_password text not null,
   from_name text,
   is_default boolean not null default false,
+  warmup_enabled boolean not null default false,
+  warmup_started_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table senders
+  add column if not exists warmup_enabled boolean not null default false,
+  add column if not exists warmup_started_at timestamptz;
 
 create table if not exists campaigns (
   id uuid primary key default gen_random_uuid(),
@@ -155,10 +161,16 @@ create table if not exists replies (
   from_email text not null,
   subject text,
   snippet text,
+  body_text text,
+  body_html text,
   received_at timestamptz,
   created_at timestamptz not null default now(),
   unique (recipient_id, received_at)
 );
+
+alter table replies
+  add column if not exists body_text text,
+  add column if not exists body_html text;
 
 create index if not exists replies_recipient_idx on replies(recipient_id);
 create index if not exists replies_received_at_idx on replies(received_at desc);

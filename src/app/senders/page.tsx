@@ -9,14 +9,24 @@ type Sender = {
   email: string;
   from_name: string | null;
   is_default: boolean;
+  warmup_enabled: boolean;
+  warmup_started_at: string | null;
   created_at: string;
 };
+
+function warmupStatus(s: Sender) {
+  if (!s.warmup_enabled || !s.warmup_started_at) return null;
+  const days = Math.floor((Date.now() - new Date(s.warmup_started_at).getTime()) / 86_400_000);
+  const ramp = [10, 20, 40, 60, 100, 150, 200, 250, 300, 350, 400, 400, 400, 400];
+  if (days >= ramp.length) return { done: true, day: ramp.length, cap: null as number | null };
+  return { done: false, day: days + 1, cap: ramp[Math.max(0, days)] };
+}
 
 export default function SendersPage() {
   const [senders, setSenders] = useState<Sender[] | null>(null);
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [form, setForm] = useState({ label: "", email: "", app_password: "", from_name: "", is_default: false });
+  const [form, setForm] = useState({ label: "", email: "", app_password: "", from_name: "", is_default: false, warmup_enabled: false });
   const [saving, setSaving] = useState(false);
 
   async function load() {
@@ -39,6 +49,7 @@ export default function SendersPage() {
         app_password: form.app_password,
         from_name: form.from_name || null,
         is_default: form.is_default,
+        warmup_enabled: form.warmup_enabled,
       }),
     });
     setSaving(false);
@@ -49,7 +60,7 @@ export default function SendersPage() {
       else setErr(`Failed (HTTP ${r.status}).`);
       return;
     }
-    setForm({ label: "", email: "", app_password: "", from_name: "", is_default: false });
+    setForm({ label: "", email: "", app_password: "", from_name: "", is_default: false, warmup_enabled: false });
     setAdding(false);
     await load();
   }
@@ -131,10 +142,19 @@ export default function SendersPage() {
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-[13px] mt-5 cursor-pointer w-fit">
-              <input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} className="w-4 h-4 accent-accent" />
-              <span>Make this the default sender for new campaigns</span>
-            </label>
+            <div className="mt-5 space-y-2.5">
+              <label className="flex items-center gap-2 text-[13px] cursor-pointer w-fit">
+                <input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} className="w-4 h-4 accent-accent" />
+                <span>Make this the default sender for new campaigns</span>
+              </label>
+              <label className="flex items-start gap-2 text-[13px] cursor-pointer">
+                <input type="checkbox" checked={form.warmup_enabled} onChange={(e) => setForm({ ...form, warmup_enabled: e.target.checked })} className="w-4 h-4 mt-0.5 accent-accent" />
+                <div>
+                  <div>Enable 14-day warmup</div>
+                  <div className="text-[11px] text-ink-500 mt-0.5">Ramps from 10/day up to 400/day over 14 days. Essential for brand new Gmail accounts — without it they get flagged as spam fast.</div>
+                </div>
+              </label>
+            </div>
 
             {err && (
               <div className="mt-4 bg-red-50 text-red-700 text-[13px] px-3 py-2 rounded-md">
@@ -200,9 +220,16 @@ export default function SendersPage() {
                 ) : (
                   <div className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-hover transition-colors">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[14px] font-medium truncate">{s.label}</span>
                         {s.is_default && <span className="pill-live">default</span>}
+                        {(() => {
+                          const w = warmupStatus(s);
+                          if (!w) return null;
+                          return w.done
+                            ? <span className="pill-done">warmup done</span>
+                            : <span className="pill-pause">warmup day {w.day}/14 · {w.cap}/day</span>;
+                        })()}
                       </div>
                       <div className="text-[13px] text-ink-500 truncate mt-0.5">
                         {s.from_name ? <>{s.from_name} <span className="text-ink-400">&lt;{s.email}&gt;</span></> : s.email}

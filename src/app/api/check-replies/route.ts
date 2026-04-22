@@ -106,14 +106,14 @@ export async function GET(req: NextRequest) {
     const repliedRecipientIds = new Set<string>();
 
     for (const msg of messages) {
-      // Always skip obvious noise — bounces are never real replies, auto-replies
-      // (OOO, vacation responders, mailing-list notices) are not 1:1 engagement.
+      // Skip bounces (mailer-daemon / DSNs) — those aren't from the recipient
+      // at all, so counting them as a "reply" is factually wrong. Everything
+      // else is kept, including auto-replies / OOO / vacation responders —
+      // the owner wants to see every inbound signal, not just "active" ones.
       if (msg.is_bounce) { skippedBounce++; continue; }
-      if (msg.is_auto_reply) { skippedAuto++; continue; }
 
-      // 1) Authoritative match: the reply's In-Reply-To / References carries one
-      //    of our outbound Message-IDs. This is the only signal that proves the
-      //    message is a genuine reply to our campaign.
+      // 1) Authoritative match: In-Reply-To / References contains one of our
+      //    outbound Message-IDs. Guaranteed genuine reply to our campaign.
       let hit: { id: string; campaign_id: string; status: string } | undefined;
       const candidateMsgIds = [
         ...(msg.in_reply_to ? [msg.in_reply_to] : []),
@@ -125,12 +125,12 @@ export async function GET(req: NextRequest) {
       }
       if (hit) matchedByThread++;
 
-      // 2) Fallback: from-address match — BUT only if the message carries any
-      //    reply-threading header. Otherwise it's likely unrelated mail from
-      //    that address (random personal email, newsletter, etc.).
+      // 2) Fallback: from-address matches a recipient we sent to. Auto-replies
+      //    and bounces are already filtered above, so any remaining mail from
+      //    a recipient address is treated as a genuine reply. Not every email
+      //    client sets In-Reply-To/References reliably, and requiring threading
+      //    headers drops real replies from some webmail clients.
       if (!hit) {
-        const looksLikeReply = candidateMsgIds.length > 0;
-        if (!looksLikeReply) continue;
         hit = byEmail.get(msg.from);
         if (hit) matchedByFrom++;
       }

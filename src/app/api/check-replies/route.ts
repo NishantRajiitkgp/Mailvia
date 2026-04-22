@@ -8,6 +8,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+function normalizeMsgId(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const t = v.trim();
+  if (!t) return null;
+  return t.startsWith("<") ? t : `<${t.replace(/^[<\s]+|[>\s]+$/g, "")}>`;
+}
+
 export async function GET(req: NextRequest) {
   if (!cronBearerOk(req.headers.get("authorization"))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -17,10 +24,17 @@ export async function GET(req: NextRequest) {
   const { data: senders } = await db.from("senders").select("id, email, app_password");
   if (!senders || senders.length === 0) return NextResponse.json({ status: "no_senders" });
 
-  // Look back 7 days — replies to older sends are edge-case and not worth
-  // the extra 60-second budget needed to scan the full 21-day inbox window.
   const since = new Date(Date.now() - 7 * 86400 * 1000);
-  const results: Array<{ sender: string; checked: number; marked_replied: number; saved: number }> = [];
+  const results: Array<{
+    sender: string;
+    checked: number;
+    matched_by_thread: number;
+    matched_by_from: number;
+    skipped_auto: number;
+    skipped_bounce: number;
+    saved: number;
+    marked_replied: number;
+  }> = [];
 
   for (const s of senders) {
     let messages;
@@ -30,48 +44,98 @@ export async function GET(req: NextRequest) {
         since
       );
     } catch {
-      results.push({ sender: s.email, checked: 0, marked_replied: -1, saved: 0 });
+      results.push({
+        sender: s.email, checked: 0,
+        matched_by_thread: 0, matched_by_from: 0,
+        skipped_auto: 0, skipped_bounce: 0, saved: 0, marked_replied: -1,
+      });
       continue;
     }
     if (messages.length === 0) {
-      results.push({ sender: s.email, checked: 0, marked_replied: 0, saved: 0 });
+      results.push({
+        sender: s.email, checked: 0,
+        matched_by_thread: 0, matched_by_from: 0,
+        skipped_auto: 0, skipped_bounce: 0, saved: 0, marked_replied: 0,
+      });
       continue;
     }
 
-    const addrs = Array.from(new Set(messages.map((m) => m.from)));
-
-    // Two-step: first get this sender's campaign ids, then match recipients.
-    // (The earlier `campaigns!inner(sender_id)` inline filter was silently
-    // breaking the follow-up .update(), leading to replies being saved but
-    // recipient.status never flipping to 'replied'.)
+    // Campaigns for this sender
     const { data: campaignRows } = await db
       .from("campaigns")
       .select("id")
       .eq("sender_id", s.id);
     const campaignIds = (campaignRows ?? []).map((c) => c.id);
     if (campaignIds.length === 0) {
-      results.push({ sender: s.email, checked: messages.length, marked_replied: 0, saved: 0 });
+      results.push({
+        sender: s.email, checked: messages.length,
+        matched_by_thread: 0, matched_by_from: 0,
+        skipped_auto: 0, skipped_bounce: 0, saved: 0, marked_replied: 0,
+      });
       continue;
     }
 
-    const { data: matches } = await db
+    // Fetch recipients in this sender's campaigns (email + message_id both matter).
+    const { data: recipientsRows } = await db
       .from("recipients")
-      .select("id, email, campaign_id, status")
-      .in("email", addrs)
-      .in("campaign_id", campaignIds);
+      .select("id, email, campaign_id, status, message_id")
+      .in("campaign_id", campaignIds)
+      .range(0, 99999);
 
+    // Two indexes: by message_id (authoritative — this is a genuine thread reply)
+    // and by email (fallback — used only when the reply also carries SOME
+    // In-Reply-To/References, which rules out unrelated mail from that address).
+    const byMsgId = new Map<string, { id: string; campaign_id: string; status: string }>();
     const byEmail = new Map<string, { id: string; campaign_id: string; status: string }>();
-    for (const m of matches ?? []) {
-      if (!byEmail.has(m.email)) byEmail.set(m.email, { id: m.id, campaign_id: m.campaign_id, status: m.status });
+    for (const r of recipientsRows ?? []) {
+      const mid = normalizeMsgId(r.message_id);
+      if (mid && !byMsgId.has(mid)) {
+        byMsgId.set(mid, { id: r.id, campaign_id: r.campaign_id, status: r.status });
+      }
+      const lo = r.email.toLowerCase();
+      if (!byEmail.has(lo)) {
+        byEmail.set(lo, { id: r.id, campaign_id: r.campaign_id, status: r.status });
+      }
     }
 
     let savedCount = 0;
+    let matchedByThread = 0;
+    let matchedByFrom = 0;
+    let skippedAuto = 0;
+    let skippedBounce = 0;
+    const repliedRecipientIds = new Set<string>();
+
     for (const msg of messages) {
-      const hit = byEmail.get(msg.from);
+      // Always skip obvious noise — bounces are never real replies, auto-replies
+      // (OOO, vacation responders, mailing-list notices) are not 1:1 engagement.
+      if (msg.is_bounce) { skippedBounce++; continue; }
+      if (msg.is_auto_reply) { skippedAuto++; continue; }
+
+      // 1) Authoritative match: the reply's In-Reply-To / References carries one
+      //    of our outbound Message-IDs. This is the only signal that proves the
+      //    message is a genuine reply to our campaign.
+      let hit: { id: string; campaign_id: string; status: string } | undefined;
+      const candidateMsgIds = [
+        ...(msg.in_reply_to ? [msg.in_reply_to] : []),
+        ...msg.references,
+      ];
+      for (const mid of candidateMsgIds) {
+        const found = byMsgId.get(mid);
+        if (found) { hit = found; break; }
+      }
+      if (hit) matchedByThread++;
+
+      // 2) Fallback: from-address match — BUT only if the message carries any
+      //    reply-threading header. Otherwise it's likely unrelated mail from
+      //    that address (random personal email, newsletter, etc.).
+      if (!hit) {
+        const looksLikeReply = candidateMsgIds.length > 0;
+        if (!looksLikeReply) continue;
+        hit = byEmail.get(msg.from);
+        if (hit) matchedByFrom++;
+      }
       if (!hit) continue;
-      // Upsert with update-on-conflict so existing rows get their body fields
-      // backfilled when we re-fetch (e.g. a reply saved before the body-capture
-      // upgrade, or if parsing failed the first time).
+
       const { error } = await db.from("replies").upsert(
         {
           recipient_id: hit.id,
@@ -86,15 +150,14 @@ export async function GET(req: NextRequest) {
         { onConflict: "recipient_id,received_at" }
       );
       if (!error) savedCount++;
+
+      if (hit.status === "sent" || hit.status === "pending") {
+        repliedRecipientIds.add(hit.id);
+      }
     }
 
-    // Only flip statuses that aren't already 'replied' / 'unsubscribed' / 'bounced'.
-    const flipIds = Array.from(byEmail.values())
-      .filter((v) => v.status === "sent" || v.status === "pending")
-      .map((v) => v.id);
-
     let markedReplied = 0;
-    if (flipIds.length > 0) {
+    if (repliedRecipientIds.size > 0) {
       const { data: updated, error: upErr } = await db
         .from("recipients")
         .update({
@@ -102,13 +165,22 @@ export async function GET(req: NextRequest) {
           replied_at: new Date().toISOString(),
           next_follow_up_at: null,
         })
-        .in("id", flipIds)
+        .in("id", Array.from(repliedRecipientIds))
         .select("id");
       if (upErr) console.error("[check-replies] update failed:", upErr);
       markedReplied = updated?.length ?? 0;
     }
 
-    results.push({ sender: s.email, checked: messages.length, marked_replied: markedReplied, saved: savedCount });
+    results.push({
+      sender: s.email,
+      checked: messages.length,
+      matched_by_thread: matchedByThread,
+      matched_by_from: matchedByFrom,
+      skipped_auto: skippedAuto,
+      skipped_bounce: skippedBounce,
+      saved: savedCount,
+      marked_replied: markedReplied,
+    });
   }
 
   return NextResponse.json({ status: "ok", results });

@@ -16,6 +16,9 @@ type Stats = {
   opens: number; unique_opens: number; clicks: number; unique_clicks: number;
   rates: { open_rate: number; click_rate: number; reply_rate: number; bounce_rate: number; unsubscribe_rate: number };
   opens_by_hour: number[];
+  clicks_by_hour: number[];
+  opens_by_weekday: number[];
+  clicks_by_weekday: number[];
   timezone: string;
 };
 
@@ -268,54 +271,7 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
       </div>
 
       {campaign.tracking_enabled && stats && stats.opens > 0 && (
-        <section className="sheet p-6 mb-8">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <h2 className="text-[15px] font-semibold">When they open</h2>
-              <p className="text-[12px] text-ink-500 mt-1">
-                Hourly opens in {stats.timezone}. Send ~1h before peak to land when the inbox is being read.
-              </p>
-            </div>
-            {(() => {
-              const top = stats.opens_by_hour
-                .map((c, h) => ({ c, h }))
-                .filter((x) => x.c > 0)
-                .sort((a, b) => b.c - a.c)
-                .slice(0, 3);
-              if (top.length === 0) return null;
-              return (
-                <div className="text-right">
-                  <div className="text-[11px] font-medium text-ink-500 uppercase tracking-wider">Peak</div>
-                  <div className="text-[12px] font-mono mt-0.5">{top.map((t) => `${String(t.h).padStart(2, "0")}:00`).join(" · ")}</div>
-                </div>
-              );
-            })()}
-          </div>
-          {(() => {
-            const max = Math.max(...stats.opens_by_hour, 1);
-            return (
-              <div>
-                <div className="flex items-end gap-[3px] h-[120px]">
-                  {stats.opens_by_hour.map((c, h) => {
-                    const pct = (c / max) * 100;
-                    return (
-                      <div key={h} className="flex-1 flex flex-col justify-end h-full group relative">
-                        <div
-                          className={`w-full transition-all duration-300 ${c > 0 ? "bg-ink group-hover:bg-accent" : "bg-ink-100"}`}
-                          style={{ height: `${Math.max(pct, c > 0 ? 6 : 2)}%`, minHeight: c > 0 ? 4 : 2 }}
-                          title={`${String(h).padStart(2, "0")}:00 · ${c} open${c !== 1 ? "s" : ""}`}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="flex justify-between mt-2 text-[10px] font-mono text-ink-400 tracking-wider">
-                  <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
-                </div>
-              </div>
-            );
-          })()}
-        </section>
+        <EngagementSection stats={stats} />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr,320px] gap-10">
@@ -654,6 +610,213 @@ function Row({ k, children, mono }: { k: string; children: React.ReactNode; mono
     <div className="flex items-center justify-between gap-3">
       <dt className="text-ink-500">{k}</dt>
       <dd className={`truncate text-right ${mono ? "font-mono text-xs" : ""}`}>{children}</dd>
+    </div>
+  );
+}
+
+// --- Engagement timing ---
+const WEEKDAY_LABEL = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAY_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
+
+function EngagementSection({ stats }: { stats: Stats }) {
+  const totalOpens = stats.opens_by_hour.reduce((a, b) => a + b, 0);
+  const totalClicks = stats.clicks_by_hour.reduce((a, b) => a + b, 0);
+  const avgPerHour = totalOpens / 24;
+
+  // Peak hour (by opens)
+  const peakHourIdx = stats.opens_by_hour.reduce(
+    (best, c, h) => (c > stats.opens_by_hour[best] ? h : best),
+    0
+  );
+  const peakHourOpens = stats.opens_by_hour[peakHourIdx];
+  const peakMultiplier = avgPerHour > 0 ? peakHourOpens / avgPerHour : 0;
+
+  // Peak weekday (by opens). If no opens yet, nothing.
+  const peakDayIdx = stats.opens_by_weekday.reduce(
+    (best, c, d) => (c > stats.opens_by_weekday[best] ? d : best),
+    0
+  );
+  const peakDayOpens = stats.opens_by_weekday[peakDayIdx];
+
+  // Recommended send window — 1 hour BEFORE peak so the email lands just in time.
+  const recSendHour = (peakHourIdx + 24 - 1) % 24;
+
+  const clickToOpen = totalOpens > 0 ? Math.round((totalClicks / totalOpens) * 1000) / 10 : 0;
+
+  return (
+    <section className="sheet p-6 mb-8">
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 className="text-[15px] font-semibold">When they engage</h2>
+          <p className="text-[12px] text-ink-500 mt-1">
+            Hourly opens + clicks in {stats.timezone}. Send ~1h before peak to land when the inbox is being read.
+          </p>
+        </div>
+        {peakHourOpens > 0 && (
+          <div className="text-right shrink-0">
+            <div className="text-[11px] font-medium text-ink-500 uppercase tracking-wider">Best send time</div>
+            <div className="text-[13px] font-mono font-semibold mt-0.5">
+              {peakDayOpens > 0 ? `${WEEKDAY_LABEL[peakDayIdx]} · ` : ""}
+              {String(recSendHour).padStart(2, "0")}:00
+            </div>
+            {peakMultiplier >= 1.3 && (
+              <div className="text-[11px] text-ink-500 mt-0.5 font-mono">
+                {peakMultiplier.toFixed(1)}× avg at peak
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 text-[11px] text-ink-500 mb-3">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block w-3 h-2 bg-ink rounded-sm" />
+          Opens <span className="font-mono text-ink-700">{totalOpens}</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block w-3 h-2 bg-emerald-500 rounded-sm" />
+          Clicks <span className="font-mono text-ink-700">{totalClicks}</span>
+        </span>
+        {totalOpens > 0 && (
+          <span className="text-ink-400">· Click-to-open: <span className="font-mono text-ink-700">{clickToOpen}%</span></span>
+        )}
+      </div>
+
+      <HourlyBars opens={stats.opens_by_hour} clicks={stats.clicks_by_hour} peakHour={peakHourIdx} />
+
+      {peakDayOpens > 0 && (
+        <div className="mt-6 pt-5 border-t border-ink-100">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[11px] font-medium text-ink-500 uppercase tracking-wider">By weekday</div>
+            <div className="text-[11px] text-ink-400 font-mono">
+              Best: <span className="text-ink-700 font-semibold">{WEEKDAY_LABEL[peakDayIdx]}</span>
+            </div>
+          </div>
+          <WeekdayBars
+            opens={stats.opens_by_weekday}
+            clicks={stats.clicks_by_weekday}
+            peakIdx={peakDayIdx}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HourlyBars({ opens, clicks, peakHour }: { opens: number[]; clicks: number[]; peakHour: number }) {
+  // Stacked bar: opens base + clicks on top. Scale to the max total per hour.
+  const totals = opens.map((o, i) => o + (clicks[i] ?? 0));
+  const max = Math.max(...totals, 1);
+  const [hover, setHover] = useState<number | null>(null);
+
+  return (
+    <div>
+      <div className="flex items-end gap-[3px] h-[140px] relative">
+        {opens.map((o, h) => {
+          const c = clicks[h] ?? 0;
+          const total = o + c;
+          const openPct = (o / max) * 100;
+          const clickPct = (c / max) * 100;
+          const isPeak = h === peakHour && total > 0;
+          const isHovered = hover === h;
+          return (
+            <div
+              key={h}
+              className="flex-1 flex flex-col justify-end h-full relative cursor-default"
+              onMouseEnter={() => setHover(h)}
+              onMouseLeave={() => setHover(null)}
+            >
+              {total === 0 && (
+                <div className="w-full bg-ink-100" style={{ height: 2 }} />
+              )}
+              {c > 0 && (
+                <div
+                  className={`w-full ${isHovered ? "bg-emerald-400" : "bg-emerald-500"} transition-colors`}
+                  style={{ height: `${Math.max(clickPct, 2)}%` }}
+                />
+              )}
+              {o > 0 && (
+                <div
+                  className={`w-full transition-colors ${isHovered ? "bg-ink-700" : isPeak ? "bg-ink" : "bg-ink-800"}`}
+                  style={{ height: `${Math.max(openPct, 3)}%`, minHeight: 3 }}
+                />
+              )}
+              {isHovered && total > 0 && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-10 whitespace-nowrap rounded-md bg-ink text-paper px-2.5 py-1.5 text-[11px] shadow-lg pointer-events-none">
+                  <div className="font-mono font-semibold">{String(h).padStart(2, "0")}:00</div>
+                  <div className="text-ink-300 mt-0.5">
+                    {o} open{o !== 1 ? "s" : ""}
+                    {c > 0 && ` · ${c} click${c !== 1 ? "s" : ""}`}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-between mt-2 text-[10px] font-mono text-ink-400 tracking-wider">
+        <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
+      </div>
+    </div>
+  );
+}
+
+function WeekdayBars({ opens, clicks, peakIdx }: { opens: number[]; clicks: number[]; peakIdx: number }) {
+  const totals = opens.map((o, i) => o + (clicks[i] ?? 0));
+  const max = Math.max(...totals, 1);
+  const [hover, setHover] = useState<number | null>(null);
+
+  return (
+    <div>
+      <div className="flex items-end gap-2 h-[80px]">
+        {opens.map((o, d) => {
+          const c = clicks[d] ?? 0;
+          const total = o + c;
+          const openPct = (o / max) * 100;
+          const clickPct = (c / max) * 100;
+          const isPeak = d === peakIdx && total > 0;
+          const isHovered = hover === d;
+          return (
+            <div
+              key={d}
+              className="flex-1 flex flex-col items-center gap-1.5 cursor-default"
+              onMouseEnter={() => setHover(d)}
+              onMouseLeave={() => setHover(null)}
+            >
+              <div className="flex-1 w-full flex flex-col justify-end relative">
+                {total === 0 && (
+                  <div className="w-full bg-ink-100" style={{ height: 2 }} />
+                )}
+                {c > 0 && (
+                  <div
+                    className={`w-full ${isHovered ? "bg-emerald-400" : "bg-emerald-500"} transition-colors`}
+                    style={{ height: `${Math.max(clickPct, 2)}%` }}
+                  />
+                )}
+                {o > 0 && (
+                  <div
+                    className={`w-full transition-colors ${isHovered ? "bg-ink-700" : isPeak ? "bg-ink" : "bg-ink-800"}`}
+                    style={{ height: `${Math.max(openPct, 3)}%`, minHeight: 3 }}
+                  />
+                )}
+                {isHovered && total > 0 && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-10 whitespace-nowrap rounded-md bg-ink text-paper px-2.5 py-1.5 text-[11px] shadow-lg pointer-events-none">
+                    <div className="font-mono font-semibold">{WEEKDAY_LABEL[d]}</div>
+                    <div className="text-ink-300 mt-0.5">
+                      {o} open{o !== 1 ? "s" : ""}
+                      {c > 0 && ` · ${c} click${c !== 1 ? "s" : ""}`}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className={`text-[11px] font-medium ${isPeak ? "text-ink" : "text-ink-500"}`}>
+                {WEEKDAY_SHORT[d]}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

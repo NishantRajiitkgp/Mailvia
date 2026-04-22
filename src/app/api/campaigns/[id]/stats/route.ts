@@ -43,21 +43,35 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const uniqClick = new Set((uniqueClickers.data ?? []).map((r: { recipient_id: string }) => r.recipient_id)).size;
   const sentCount = sent.count ?? 0;
 
-  // opens by hour (campaign's timezone, default IST)
+  // Hourly + weekday engagement in the campaign's timezone (default IST).
   const { data: campTz } = await db.from("campaigns").select("timezone").eq("id", id).maybeSingle();
   const tz = campTz?.timezone || "Asia/Kolkata";
-  const { data: openRows } = await db
-    .from("tracking_events")
-    .select("created_at")
-    .eq("campaign_id", id)
-    .eq("kind", "open")
-    .range(0, 99999);
+
+  const [openRowsRes, clickRowsRes] = await Promise.all([
+    db.from("tracking_events").select("created_at").eq("campaign_id", id).eq("kind", "open").range(0, 99999),
+    db.from("tracking_events").select("created_at").eq("campaign_id", id).eq("kind", "click").range(0, 99999),
+  ]);
+  const openRows = openRowsRes.data ?? [];
+  const clickRows = clickRowsRes.data ?? [];
+
+  const hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false });
+  const weekdayFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" });
+  const WEEKDAY_IDX: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+
   const opensByHour = new Array(24).fill(0);
-  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false });
-  (openRows ?? []).forEach((o: { created_at: string }) => {
-    const h = Number(fmt.format(new Date(o.created_at)));
-    opensByHour[h === 24 ? 0 : h]++;
-  });
+  const clicksByHour = new Array(24).fill(0);
+  const opensByWeekday = new Array(7).fill(0);
+  const clicksByWeekday = new Array(7).fill(0);
+
+  const bucket = (row: { created_at: string }, hourArr: number[], weekdayArr: number[]) => {
+    const d = new Date(row.created_at);
+    const h = Number(hourFmt.format(d));
+    hourArr[h === 24 ? 0 : h]++;
+    const w = WEEKDAY_IDX[weekdayFmt.format(d)] ?? 0;
+    weekdayArr[w]++;
+  };
+  for (const o of openRows) bucket(o as { created_at: string }, opensByHour, opensByWeekday);
+  for (const c of clickRows) bucket(c as { created_at: string }, clicksByHour, clicksByWeekday);
 
   const rate = (num: number, denom: number) => (denom > 0 ? Math.round((num / denom) * 1000) / 10 : 0);
 
@@ -82,6 +96,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       unsubscribe_rate: rate(unsubscribed.count ?? 0, sentCount),
     },
     opens_by_hour: opensByHour,
+    clicks_by_hour: clicksByHour,
+    opens_by_weekday: opensByWeekday,
+    clicks_by_weekday: clicksByWeekday,
     timezone: tz,
   });
 }

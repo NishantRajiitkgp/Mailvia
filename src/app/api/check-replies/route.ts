@@ -21,6 +21,20 @@ export async function GET(req: NextRequest) {
   }
 
   const db = supabaseAdmin();
+
+  // Reply checking is opt-in (default OFF) so the heavy IMAP+mailparser path
+  // doesn't burn Vercel memory-hours unless the user actually wants replies.
+  // Toggle from /replies in the app, or directly via:
+  //   update public.app_settings set value='true' where key='reply_check_enabled';
+  const { data: flag } = await db
+    .from("app_settings")
+    .select("value")
+    .eq("key", "reply_check_enabled")
+    .maybeSingle();
+  if (flag?.value !== "true") {
+    return NextResponse.json({ status: "disabled" });
+  }
+
   const { data: senders } = await db.from("senders").select("id, email, app_password");
   if (!senders || senders.length === 0) return NextResponse.json({ status: "no_senders" });
 

@@ -202,6 +202,17 @@ insert into storage.buckets (id, name, public)
 values ('attachments', 'attachments', false)
 on conflict (id) do nothing;
 
+-- App-level toggles (read/written by Next.js via service_role).
+-- Use this for feature flags, NOT for secrets — secrets live in cron_config
+-- which is locked down even from service_role.
+create table if not exists app_settings (
+  key   text primary key,
+  value text not null
+);
+-- Reply checking is opt-in. See src/app/api/check-replies/route.ts.
+insert into app_settings (key, value) values ('reply_check_enabled', 'false')
+on conflict (key) do nothing;
+
 -- ----- Row-Level Security: default-deny for anon / authenticated roles.
 -- The server uses SUPABASE_SERVICE_ROLE_KEY, which bypasses RLS, so this
 -- doesn't change app behavior. It's defense-in-depth against accidental
@@ -214,3 +225,4 @@ alter table send_log           enable row level security;
 alter table tracking_events    enable row level security;
 alter table unsubscribes       enable row level security;
 alter table replies            enable row level security;
+alter table app_settings       enable row level security;

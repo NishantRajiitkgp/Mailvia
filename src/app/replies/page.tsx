@@ -11,6 +11,8 @@ export default function RepliesPage() {
   const [active, setActive] = useState<ReplyItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [replyCheckEnabled, setReplyCheckEnabled] = useState<boolean | null>(null);
+  const [togglePending, setTogglePending] = useState(false);
 
   async function load() {
     const r = await fetch("/api/replies", { cache: "no-store" });
@@ -18,7 +20,38 @@ export default function RepliesPage() {
     setReplies(d.replies ?? []);
   }
 
-  useEffect(() => { load(); }, []);
+  async function loadFlag() {
+    const r = await fetch("/api/settings/reply-check", { cache: "no-store" });
+    if (!r.ok) return;
+    const d = await r.json();
+    setReplyCheckEnabled(!!d.enabled);
+  }
+
+  async function toggleFlag() {
+    if (replyCheckEnabled === null) return;
+    const next = !replyCheckEnabled;
+    if (next && !confirm("Enable reply checking? This polls Gmail IMAP every 15 min and uses more Vercel resources. You can turn it off again anytime.")) {
+      return;
+    }
+    setTogglePending(true);
+    try {
+      const r = await fetch("/api/settings/reply-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (!r.ok) {
+        alert("Failed to update setting.");
+        return;
+      }
+      const d = await r.json();
+      setReplyCheckEnabled(!!d.enabled);
+    } finally {
+      setTogglePending(false);
+    }
+  }
+
+  useEffect(() => { load(); loadFlag(); }, []);
 
   async function reload() {
     setRunning(true);
@@ -84,6 +117,29 @@ export default function RepliesPage() {
             {running ? "Loading…" : "Reload"}
           </button>
         </div>
+
+        {replyCheckEnabled !== null && (
+          <div className={`mb-4 px-4 py-3 rounded-lg border flex items-center justify-between gap-4 ${replyCheckEnabled ? "border-ink-200 bg-paper" : "border-amber-200 bg-amber-50"}`}>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-medium text-ink">
+                Reply checking is {replyCheckEnabled ? "ON" : "OFF"}
+              </div>
+              <div className="text-[12px] text-ink-500 mt-0.5">
+                {replyCheckEnabled
+                  ? "Gmail IMAP is polled every 15 min. Replies appear here within minutes of arriving."
+                  : "Mass mailing still works — only inbound polling is paused. Turn on to start ingesting replies."}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={toggleFlag}
+              disabled={togglePending}
+              className={`shrink-0 text-[13px] px-3 py-1.5 rounded border transition-colors ${replyCheckEnabled ? "border-ink-300 hover:bg-hover" : "border-ink bg-ink text-paper hover:opacity-90"}`}
+            >
+              {togglePending ? "…" : replyCheckEnabled ? "Turn off" : "Turn on"}
+            </button>
+          </div>
+        )}
 
         {replies && replies.length > 0 && (
           <div className="mb-4 relative">

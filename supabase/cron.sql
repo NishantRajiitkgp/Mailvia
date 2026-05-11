@@ -33,6 +33,12 @@ insert into public.cron_config (key, value) values
   ('cron_secret', 'REPLACE_WITH_YOUR_CRON_SECRET')
 on conflict (key) do update set value = excluded.value;
 
+-- NOTE: Reply checking is OFF by default. The toggle lives in `app_settings`
+-- (see schema.sql) so the Next.js service_role can read/write it. The cron
+-- job below still fires every 15 min, but the route early-returns when the
+-- flag is false. For literally zero Vercel cost, also pause the job:
+--   update cron.job set active = false where jobname = 'mail-automation-check-replies';
+
 -- ============================================================
 -- Step 3. (Re)schedule the jobs. They read app_url + cron_secret from the
 -- config table at every tick, so updating the config automatically applies.
@@ -45,6 +51,8 @@ select cron.unschedule('mail-automation-check-replies')
 -- Tick every minute. `params := '{}'::jsonb` is required to work around a
 -- pg_net overload bug where the internal _encode_url_with_params_array call
 -- fails when params is omitted.
+-- Tick is light (~150MB × ~2s per call) — fine on Vercel Hobby. The heavy
+-- one was check-replies, now off by default (see reply_check_enabled below).
 select cron.schedule(
   'mail-automation-tick',
   '* * * * *',
@@ -61,10 +69,10 @@ select cron.schedule(
   $$
 );
 
--- Reply check every 5 minutes
+-- Reply check every 15 minutes (was 5 min; cut to stay under Vercel Hobby cap)
 select cron.schedule(
   'mail-automation-check-replies',
-  '*/5 * * * *',
+  '*/15 * * * *',
   $$
     select net.http_get(
       url := (select value from public.cron_config where key = 'app_url') || '/api/check-replies',

@@ -119,12 +119,12 @@ export default function RepliesPage() {
         </div>
 
         {replyCheckEnabled !== null && (
-          <div className={`mb-4 px-4 py-3 rounded-lg border flex items-center justify-between gap-4 ${replyCheckEnabled ? "border-ink-200 bg-paper" : "border-amber-200 bg-amber-50"}`}>
+          <div className={`mb-4 px-4 py-3 rounded-lg border flex items-center justify-between gap-4 ${replyCheckEnabled ? "border-ink-200 bg-paper" : "border-amber-300 bg-amber-50"}`}>
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium text-ink">
+              <div className={`text-[13px] font-semibold ${replyCheckEnabled ? "text-ink" : "text-amber-900"}`}>
                 Reply checking is {replyCheckEnabled ? "ON" : "OFF"}
               </div>
-              <div className="text-[12px] text-ink-500 mt-0.5">
+              <div className={`text-[12px] mt-0.5 ${replyCheckEnabled ? "text-ink-500" : "text-amber-800"}`}>
                 {replyCheckEnabled
                   ? "Gmail IMAP is polled every 15 min. Replies appear here within minutes of arriving."
                   : "Mass mailing still works — only inbound polling is paused. Turn on to start ingesting replies."}
@@ -134,7 +134,7 @@ export default function RepliesPage() {
               type="button"
               onClick={toggleFlag}
               disabled={togglePending}
-              className={`shrink-0 text-[13px] px-3 py-1.5 rounded border transition-colors ${replyCheckEnabled ? "border-ink-300 hover:bg-hover" : "border-ink bg-ink text-paper hover:opacity-90"}`}
+              className={`shrink-0 text-[13px] px-3 py-1.5 rounded border transition-colors ${replyCheckEnabled ? "border-ink-300 hover:bg-hover" : "border-amber-900 bg-amber-900 text-amber-50 hover:opacity-90"}`}
             >
               {togglePending ? "…" : replyCheckEnabled ? "Turn off" : "Turn on"}
             </button>

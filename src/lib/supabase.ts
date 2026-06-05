@@ -11,6 +11,8 @@ export type WeekdayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 export type DaySchedule = { enabled: boolean; start: string; end: string };
 export type Schedule = Record<WeekdayKey, DaySchedule>;
 
+export type MailProvider = "gmail" | "outlook" | "microsoft_graph";
+
 export type Sender = {
   id: string;
   label: string;
@@ -18,6 +20,9 @@ export type Sender = {
   app_password: string;
   from_name: string | null;
   is_default: boolean;
+  provider: MailProvider;
+  ms_tenant_id: string | null;
+  ms_client_id: string | null;
   created_at: string;
 };
 

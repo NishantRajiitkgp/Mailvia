@@ -35,8 +35,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ status: "disabled" });
   }
 
-  const { data: senders } = await db.from("senders").select("id, email, app_password");
-  if (!senders || senders.length === 0) return NextResponse.json({ status: "no_senders" });
+  const { data: allSenders } = await db.from("senders").select("id, email, app_password, provider");
+  // Graph (OAuth) senders have no IMAP password — reply reading for them would
+  // need a separate Graph Mail.Read flow, so skip them here for now.
+  const senders = (allSenders ?? []).filter((s) => s.provider !== "microsoft_graph");
+  if (senders.length === 0) return NextResponse.json({ status: "no_senders" });
 
   const since = new Date(Date.now() - 7 * 86400 * 1000);
   const results: Array<{
@@ -54,7 +57,7 @@ export async function GET(req: NextRequest) {
     let messages;
     try {
       messages = await fetchIncomingMessages(
-        { email: s.email, appPassword: decryptSecret(s.app_password) },
+        { email: s.email, appPassword: decryptSecret(s.app_password), provider: s.provider },
         since
       );
     } catch {

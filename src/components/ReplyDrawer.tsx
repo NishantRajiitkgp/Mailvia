@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export type ReplyItem = {
   id: string;
@@ -29,16 +29,80 @@ function sanitizeHtml(html: string): string {
 export default function ReplyDrawer({
   reply,
   onClose,
+  onSent,
 }: {
   reply: ReplyItem | null;
   onClose: () => void;
+  onSent?: () => void;
 }) {
+  const [draft, setDraft] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const replyId = reply?.id ?? null;
+
+  // Reset the composer whenever a different reply is opened.
+  useEffect(() => {
+    setDraft("");
+    setInstructions("");
+    setGenerating(false);
+    setSending(false);
+    setSent(false);
+    setErr(null);
+  }, [replyId]);
+
   useEffect(() => {
     if (!reply) return;
     function onEsc(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onEsc);
     return () => document.removeEventListener("keydown", onEsc);
   }, [reply, onClose]);
+
+  async function generate() {
+    if (!replyId) return;
+    setGenerating(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/replies/${replyId}/ai-draft`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ instructions: instructions.trim() || undefined }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setErr(typeof d.error === "string" ? d.error : `Failed (HTTP ${r.status}).`);
+        return;
+      }
+      setDraft(d.draft ?? "");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function send() {
+    if (!replyId || !draft.trim()) return;
+    setSending(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/replies/${replyId}/send`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body: draft }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setErr(typeof d.error === "string" ? d.error : `Failed (HTTP ${r.status}).`);
+        return;
+      }
+      setSent(true);
+      onSent?.();
+    } finally {
+      setSending(false);
+    }
+  }
 
   if (!reply) return null;
 
@@ -85,6 +149,61 @@ export default function ReplyDrawer({
           ) : (
             <div className="text-[13px] text-ink-500">No body captured for this message.</div>
           )}
+        </div>
+
+        <div className="border-t border-ink-200 px-5 py-5">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="text-[11px] font-medium text-ink-500 uppercase tracking-wider">AI reply</div>
+            <button
+              type="button"
+              onClick={generate}
+              disabled={generating || sending}
+              className="btn-quiet text-[12px]"
+            >
+              {generating ? "Generating…" : draft ? "Regenerate" : "Generate AI reply"}
+            </button>
+          </div>
+
+          <input
+            type="text"
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            placeholder="Optional steer: e.g. 'offer a 15-min call next week', 'be brief and friendly'"
+            className="field-boxed w-full text-[12px] mb-3"
+            disabled={generating || sending}
+          />
+
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={8}
+            placeholder="Generate a draft above, or write your reply here. You can edit before sending."
+            className="field-boxed w-full text-[14px] leading-[1.55] resize-y"
+            disabled={sending}
+          />
+
+          {err && (
+            <div className="mt-3 bg-red-50 text-red-700 text-[12px] px-3 py-2 rounded-md">{err}</div>
+          )}
+          {sent && (
+            <div className="mt-3 bg-green-50 text-green-700 text-[12px] px-3 py-2 rounded-md">
+              Reply sent to {reply.from_email}.
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3 mt-3">
+            <p className="text-[11px] text-ink-500">
+              Sends from this campaign&apos;s sender, threaded into the conversation. Review before sending.
+            </p>
+            <button
+              type="button"
+              onClick={send}
+              disabled={sending || generating || !draft.trim() || sent}
+              className="btn-accent text-[13px] shrink-0"
+            >
+              {sending ? "Sending…" : sent ? "Sent" : "Send reply"}
+            </button>
+          </div>
         </div>
       </aside>
     </div>

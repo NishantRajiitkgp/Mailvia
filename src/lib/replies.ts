@@ -1,5 +1,19 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
+import type { MailProvider } from "@/lib/supabase";
+
+type ImapConfig = { host: string; port: number };
+
+// IMAP endpoints per provider. Both Outlook.com personal and M365 business
+// mailboxes are reachable on outlook.office365.com.
+const IMAP: Record<MailProvider, ImapConfig> = {
+  gmail: { host: "imap.gmail.com", port: 993 },
+  outlook: { host: "outlook.office365.com", port: 993 },
+};
+
+function imapConfig(provider?: MailProvider | null): ImapConfig {
+  return IMAP[provider ?? "gmail"] ?? IMAP.gmail;
+}
 
 export type IncomingMessage = {
   from: string;
@@ -104,14 +118,15 @@ function detectBounce(
 // within the `since` window so the cron function doesn't time out on active
 // inboxes (Vercel 60s budget).
 export async function fetchIncomingMessages(
-  creds: { email: string; appPassword: string },
+  creds: { email: string; appPassword: string; provider?: MailProvider | null },
   since: Date,
   opts: { maxMessages?: number } = {}
 ): Promise<IncomingMessage[]> {
   const max = opts.maxMessages ?? 500;
+  const cfg = imapConfig(creds.provider);
   const client = new ImapFlow({
-    host: "imap.gmail.com",
-    port: 993,
+    host: cfg.host,
+    port: cfg.port,
     secure: true,
     auth: { user: creds.email, pass: creds.appPassword.replace(/\s+/g, "") },
     logger: false,
@@ -181,7 +196,7 @@ export async function fetchIncomingMessages(
 
 // Backwards-compat wrapper (not used anymore but kept so callers don't break)
 export async function fetchIncomingSenders(
-  creds: { email: string; appPassword: string },
+  creds: { email: string; appPassword: string; provider?: MailProvider | null },
   since: Date
 ): Promise<string[]> {
   const msgs = await fetchIncomingMessages(creds, since);

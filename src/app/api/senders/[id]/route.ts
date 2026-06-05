@@ -43,7 +43,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     .from("senders")
     .update(update)
     .eq("id", id)
-    .select("id, label, email, from_name, is_default, warmup_enabled, warmup_started_at, created_at")
+    .select("id, label, email, from_name, is_default, warmup_enabled, warmup_started_at, provider, ms_tenant_id, ms_client_id, created_at")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ sender: data });

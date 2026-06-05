@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, type MailProvider } from "@/lib/supabase";
 import { sendMail } from "@/lib/mail";
 import { render, toHtml, toPlain } from "@/lib/template";
 import { inWindow, dayKey } from "@/lib/time";
@@ -121,14 +121,14 @@ export async function GET(req: NextRequest) {
   const today = dayKey(now, tz);
 
   // resolve sender creds for the winning campaign
-  let sender: { email: string; appPassword: string; fromName?: string | null } | null = null;
+  let sender: { email: string; appPassword: string; fromName?: string | null; provider?: MailProvider | null; msTenantId?: string | null; msClientId?: string | null } | null = null;
   if (campaign.sender_id) {
     const { data: s } = await db
       .from("senders")
-      .select("email, app_password, from_name")
+      .select("email, app_password, from_name, provider, ms_tenant_id, ms_client_id")
       .eq("id", campaign.sender_id)
       .maybeSingle();
-    if (s) sender = { email: s.email, appPassword: decryptSecret(s.app_password), fromName: s.from_name };
+    if (s) sender = { email: s.email, appPassword: decryptSecret(s.app_password), fromName: s.from_name, provider: s.provider, msTenantId: s.ms_tenant_id, msClientId: s.ms_client_id };
   }
 
   // ----- pick next thing to send: follow-up > retry > fresh -----

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, type MailProvider } from "@/lib/supabase";
 import { sendMail } from "@/lib/mail";
 import { render, toHtml, toPlain } from "@/lib/template";
 import { getSession } from "@/lib/auth";
@@ -61,14 +61,14 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
 
   // resolve sender
-  let sender: { email: string; appPassword: string; fromName?: string | null } | null = null;
+  let sender: { email: string; appPassword: string; fromName?: string | null; provider?: MailProvider | null; msTenantId?: string | null; msClientId?: string | null } | null = null;
   if (parsed.data.sender_id) {
     const { data: row } = await db
       .from("senders")
-      .select("email, app_password, from_name")
+      .select("email, app_password, from_name, provider, ms_tenant_id, ms_client_id")
       .eq("id", parsed.data.sender_id)
       .maybeSingle();
-    if (row) sender = { email: row.email, appPassword: decryptSecret(row.app_password), fromName: row.from_name };
+    if (row) sender = { email: row.email, appPassword: decryptSecret(row.app_password), fromName: row.from_name, provider: row.provider, msTenantId: row.ms_tenant_id, msClientId: row.ms_client_id };
   }
 
   // collect attachments: pending files from form + existing from campaign (if given)

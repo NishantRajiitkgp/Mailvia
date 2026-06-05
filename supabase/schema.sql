@@ -11,12 +11,23 @@ create table if not exists senders (
   is_default boolean not null default false,
   warmup_enabled boolean not null default false,
   warmup_started_at timestamptz,
+  provider text not null default 'gmail',
   created_at timestamptz not null default now()
 );
 
 alter table senders
   add column if not exists warmup_enabled boolean not null default false,
-  add column if not exists warmup_started_at timestamptz;
+  add column if not exists warmup_started_at timestamptz,
+  add column if not exists provider text not null default 'gmail',
+  -- Microsoft Graph (app-only OAuth) sender credentials. tenant/client IDs are
+  -- not secret; the client secret is stored encrypted in app_password.
+  add column if not exists ms_tenant_id text,
+  add column if not exists ms_client_id text;
+
+-- Constrain provider to known values (idempotent: drop + recreate).
+alter table senders drop constraint if exists senders_provider_check;
+alter table senders add constraint senders_provider_check
+  check (provider in ('gmail', 'outlook', 'microsoft_graph'));
 
 create table if not exists campaigns (
   id uuid primary key default gen_random_uuid(),

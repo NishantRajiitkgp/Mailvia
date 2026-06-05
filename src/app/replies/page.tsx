@@ -248,7 +248,7 @@ export default function RepliesPage() {
           </div>
         )}
 
-        <ReplyDrawer reply={active} onClose={() => setActive(null)} />
+        <ReplyDrawer reply={active} onClose={() => setActive(null)} onSent={load} />
       </div>
     </AppShell>
   );

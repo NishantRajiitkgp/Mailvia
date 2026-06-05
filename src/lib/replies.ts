@@ -5,14 +5,17 @@ import type { MailProvider } from "@/lib/supabase";
 type ImapConfig = { host: string; port: number };
 
 // IMAP endpoints per provider. Both Outlook.com personal and M365 business
-// mailboxes are reachable on outlook.office365.com.
-const IMAP: Record<MailProvider, ImapConfig> = {
+// mailboxes are reachable on outlook.office365.com. microsoft_graph is absent —
+// it reads over HTTPS (Graph), not IMAP.
+type ImapProvider = "gmail" | "outlook";
+
+const IMAP: Record<ImapProvider, ImapConfig> = {
   gmail: { host: "imap.gmail.com", port: 993 },
   outlook: { host: "outlook.office365.com", port: 993 },
 };
 
 function imapConfig(provider?: MailProvider | null): ImapConfig {
-  return IMAP[provider ?? "gmail"] ?? IMAP.gmail;
+  return provider && provider in IMAP ? IMAP[provider as ImapProvider] : IMAP.gmail;
 }
 
 export type IncomingMessage = {

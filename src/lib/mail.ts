@@ -26,13 +26,16 @@ type SmtpConfig = { host: string; port: number; secure: boolean; requireTLS?: bo
 
 // SMTP endpoints per provider. Gmail uses implicit TLS on 465; Outlook (both
 // personal Outlook.com and SMTP-AUTH-enabled M365) uses STARTTLS on 587.
-const SMTP: Record<MailProvider, SmtpConfig> = {
+// microsoft_graph is intentionally absent — it sends over HTTPS, not SMTP.
+type SmtpProvider = "gmail" | "outlook";
+
+const SMTP: Record<SmtpProvider, SmtpConfig> = {
   gmail: { host: "smtp.gmail.com", port: 465, secure: true },
   outlook: { host: "smtp-mail.outlook.com", port: 587, secure: false, requireTLS: true },
 };
 
 function smtpConfig(provider?: MailProvider | null): SmtpConfig {
-  return SMTP[provider ?? "gmail"] ?? SMTP.gmail;
+  return provider && provider in SMTP ? SMTP[provider as SmtpProvider] : SMTP.gmail;
 }
 
 function fallbackEnv(): SenderCreds {
